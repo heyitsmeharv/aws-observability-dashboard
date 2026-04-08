@@ -253,7 +253,7 @@ resource "aws_cloudwatch_dashboard" "service" {
           view   = "gauge"
           stat   = "Average"
           period = 60
-          yAxis  = { left = { min = 0 } }
+          yAxis  = { left = { min = 0, max = 1024 } }
           metrics = [
             ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
           ]
@@ -351,7 +351,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           view   = "gauge"
           stat   = "Average"
           period = 60
-          yAxis  = { left = { min = 0 } }
+          yAxis  = { left = { min = 0, max = 1024 } }
           metrics = [
             ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
           ]
@@ -369,7 +369,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           view   = "gauge"
           stat   = "Average"
           period = 60
-          yAxis  = { left = { min = 0 } }
+          yAxis  = { left = { min = 0, max = 1024 } }
           metrics = [
             ["AWS/ApplicationELB", "ActiveConnectionCount", "LoadBalancer", var.alb_arn_suffix]
           ]
