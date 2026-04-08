@@ -54,16 +54,16 @@ data "aws_iam_policy_document" "canary_permissions" {
   }
 
   statement {
-    sid    = "S3ListArtifacts"
-    effect = "Allow"
-    actions = ["s3:ListAllMyBuckets"]
+    sid       = "S3ListArtifacts"
+    effect    = "Allow"
+    actions   = ["s3:ListAllMyBuckets"]
     resources = ["*"]
   }
 
   statement {
-    sid    = "CloudWatchMetrics"
-    effect = "Allow"
-    actions = ["cloudwatch:PutMetricData"]
+    sid       = "CloudWatchMetrics"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
     resources = ["*"]
     condition {
       test     = "StringEquals"
@@ -121,8 +121,8 @@ resource "aws_synthetics_canary" "frontend" {
   artifact_s3_location = "s3://${var.artifacts_bucket_name}/canaries/${local.name_prefix}-frontend/"
   execution_role_arn   = aws_iam_role.canary.arn
   runtime_version      = var.runtime_version
-  handler  = "frontend-health-check.handler"
-  zip_file = data.archive_file.frontend_canary.output_path
+  handler              = "frontend-health-check.handler"
+  zip_file             = data.archive_file.frontend_canary.output_path
 
   schedule {
     expression = var.schedule_expression
