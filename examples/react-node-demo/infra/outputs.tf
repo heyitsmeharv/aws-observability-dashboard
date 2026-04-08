@@ -41,9 +41,9 @@ output "backend_service_name" {
 
 # ── Observability ─────────────────────────────────────────────────────────────
 
-output "dashboard_names" {
-  description = "CloudWatch dashboard names created by the observability module."
-  value       = module.observability.dashboard_names
+output "dashboard_name" {
+  description = "CloudWatch dashboard name."
+  value       = module.observability.dashboard_name
 }
 
 output "alarm_names" {

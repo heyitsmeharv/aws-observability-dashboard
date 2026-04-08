@@ -38,6 +38,49 @@ function log(level, message, fields = {}) {
   console.log(JSON.stringify(entry));
 }
 
+// ── In-process metrics store (rolling 60-second window) ────────────────────
+
+const metricsStore = {
+  entries: [],
+
+  record(route, statusCode, durationMs) {
+    const cutoff = Date.now() - 60_000;
+    this.entries = this.entries.filter((e) => e.ts > cutoff);
+    this.entries.push({ route, statusCode, durationMs, ts: Date.now() });
+  },
+
+  summary() {
+    const cutoff = Date.now() - 60_000;
+    const recent = this.entries.filter((e) => e.ts > cutoff);
+    const blank = () => ({ requests: 0, errors: 0, latencySum: 0 });
+    const total = blank();
+    const byRoute = {};
+
+    for (const e of recent) {
+      total.requests++;
+      if (e.statusCode >= 500) total.errors++;
+      total.latencySum += e.durationMs;
+      if (!byRoute[e.route]) byRoute[e.route] = blank();
+      byRoute[e.route].requests++;
+      if (e.statusCode >= 500) byRoute[e.route].errors++;
+      byRoute[e.route].latencySum += e.durationMs;
+    }
+
+    const fmt = (r) => ({
+      requests: r.requests,
+      errors: r.errors,
+      errorRate: r.requests > 0 ? +(r.errors / r.requests * 100).toFixed(1) : 0,
+      avgLatencyMs: r.requests > 0 ? Math.round(r.latencySum / r.requests) : 0,
+    });
+
+    return {
+      windowSeconds: 60,
+      total: fmt(total),
+      routes: Object.fromEntries(Object.entries(byRoute).map(([k, v]) => [k, fmt(v)])),
+    };
+  },
+};
+
 // ── Request logging middleware ─────────────────────────────────────────────
 
 app.use((req, _res, next) => {
@@ -60,6 +103,10 @@ app.use((req, res, next) => {
       sourceIp: req.ip ?? req.headers["x-forwarded-for"] ?? "unknown",
       userAgent: req.headers["user-agent"] ?? "",
     });
+    // Record in metrics store (skip the metrics endpoint itself)
+    if (req.path !== "/api/metrics") {
+      metricsStore.record(req.path, res.statusCode, durationMs);
+    }
     return originalEnd(...args);
   };
 
@@ -170,6 +217,11 @@ app.post("/api/items", (req, res) => {
   };
 
   res.status(201).json({ item });
+});
+
+// Live metrics — rolling 60-second window, polled by the frontend diagram
+app.get("/api/metrics", (_req, res) => {
+  res.json(metricsStore.summary());
 });
 
 // CORS for local development

@@ -40,7 +40,7 @@ variable "log_group_names" {
 
 variable "canary_name" {
   type        = string
-  description = "Name of the CloudWatch Synthetics canary to include on the service dashboard. Set to null to omit the canary widget."
+  description = "Name of the CloudWatch Synthetics canary. Set to null to omit the canary widget."
   default     = null
 }
 
