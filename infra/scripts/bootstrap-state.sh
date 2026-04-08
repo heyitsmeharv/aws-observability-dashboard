@@ -35,7 +35,7 @@ fi
 REGION="${AWS_REGION:-eu-west-2}"
 GITHUB_ROLE_NAME="GitHubOIDCTerraformRole"
 GITHUB_REPO=""
-PROJECT_NAME="template-terraform-boilerplate"
+PROJECT_NAME="aws-observability-dashboard"
 
 while [ "${1:-}" != "" ]; do
   case "$1" in

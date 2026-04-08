@@ -1,9 +1,16 @@
-module "demo_bucket" {
-  source = "../../modules/s3"
+module "demo" {
+  source = "../../../examples/react-node-demo/infra"
 
-  bucket_name        = "${var.project}-${var.environment}-${data.aws_caller_identity.current.account_id}-demo-bucket"
-  versioning_enabled = false
-
-  project = var.project
+  # Hardcoded to "obs-demo" — ALB names have a 32-char limit, the root
+  # project name ("aws-observability-dashboard") would exceed it.
+  project     = "obs-demo"
   environment = var.environment
+  aws_region  = var.aws_region
+
+  instance_type    = var.demo_instance_type
+  desired_capacity = var.demo_desired_capacity
+  max_capacity     = var.demo_max_capacity
+
+  enable_canaries  = var.demo_enable_canaries
+  create_sns_topic = var.demo_create_sns_topic
 }
