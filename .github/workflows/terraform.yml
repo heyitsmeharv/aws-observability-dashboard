@@ -8,7 +8,17 @@ on:
       environment:
         description: "Environment folder under infra/env/"
         required: true
+        default: "sandbox"
         type: string
+      step:
+        description: "What to run"
+        required: true
+        type: choice
+        options:
+          - infra-only
+          - images-only
+          - full-deploy
+        default: full-deploy
 
 permissions:
   id-token: write
@@ -21,8 +31,14 @@ concurrency:
 
 env:
   AWS_REGION: "eu-west-2"
+  # Must match the project/environment passed to the demo module in env.tfvars
+  DEMO_PROJECT: "obs-demo"
+  DEMO_ENV: "sandbox"
 
 jobs:
+
+# ── PR: validate + plan ───────────────────────────────────────────────────────
+
   plan:
     name: Validate + Plan (${{ matrix.environment }})
     if: github.event_name == 'pull_request'
@@ -32,7 +48,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Add more env folders here as you create them:
         environment: [sandbox]
 
     steps:
@@ -73,9 +88,11 @@ jobs:
           path: infra/env/${{ matrix.environment }}/tfplan
           if-no-files-found: error
 
+# ── Dispatch: apply infra ─────────────────────────────────────────────────────
+
   apply:
-    name: Apply (${{ inputs.environment }})
-    if: github.event_name == 'workflow_dispatch'
+    name: Apply (${{ inputs.environment }}) — infra
+    if: github.event_name == 'workflow_dispatch' && (inputs.step == 'infra-only' || inputs.step == 'full-deploy')
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
 
@@ -112,3 +129,119 @@ jobs:
 
       - name: Apply
         run: bash -euo pipefail infra/scripts/apply.sh ${{ inputs.environment }}
+
+# ── Dispatch: build + push images, force ECS deploy ──────────────────────────
+
+  deploy-images:
+    name: Deploy images (${{ inputs.environment }})
+    # Always declare needs so full-deploy waits for infra. When step=images-only
+    # the apply job is skipped — GitHub marks it 'skipped', not 'failed', so the
+    # result check below still allows deploy-images to proceed.
+    needs: [apply]
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.step == 'images-only' || inputs.step == 'full-deploy') &&
+      (needs.apply.result == 'success' || needs.apply.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve ECR registry and deployment targets
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "backend_repo=${REGISTRY}/${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend_bucket=${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-${ACCOUNT_ID}-frontend" >> "$GITHUB_OUTPUT"
+          CF_DIST_ID=$(aws ssm get-parameter \
+            --name "/${{ env.DEMO_PROJECT }}/${{ env.DEMO_ENV }}/cloudfront_distribution_id" \
+            --query 'Parameter.Value' --output text)
+          echo "cf_distribution_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: examples/react-node-demo/app/backend
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.backend_repo }}:latest
+            ${{ steps.ecr.outputs.backend_repo }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend
+        working-directory: examples/react-node-demo/app/frontend
+        env:
+          VITE_API_URL: /api
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy frontend to S3
+        run: |
+          # Versioned assets (hashed filenames) — long cache
+          aws s3 sync examples/react-node-demo/app/frontend/dist \
+            "s3://${{ steps.ecr.outputs.frontend_bucket }}" \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+          # index.html — no cache so browsers always fetch latest
+          aws s3 cp examples/react-node-demo/app/frontend/dist/index.html \
+            "s3://${{ steps.ecr.outputs.frontend_bucket }}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.ecr.outputs.cf_distribution_id }}" \
+            --paths "/*"
+
+      - name: Force new ECS deployment (backend)
+        run: |
+          CLUSTER="${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-cluster"
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-backend" \
+            --force-new-deployment \
+            --query 'service.serviceName' --output text
+
+      - name: Wait for ECS backend to stabilise
+        run: |
+          CLUSTER="${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-cluster"
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "${{ env.DEMO_PROJECT }}-${{ env.DEMO_ENV }}-backend"
+          echo "Backend service is stable"
+
+      - name: Print demo URL
+        if: success()
+        run: |
+          CF_DOMAIN=$(aws cloudfront get-distribution \
+            --id "${{ steps.ecr.outputs.cf_distribution_id }}" \
+            --query 'Distribution.DomainName' --output text)
+          echo "Demo app: https://${CF_DOMAIN}"
+          echo "Health:   https://${CF_DOMAIN}/health"
+          echo "API:      https://${CF_DOMAIN}/api/ok"

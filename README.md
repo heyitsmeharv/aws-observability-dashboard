@@ -1,73 +1,169 @@
-# template-terraform-boilerplate
-Reusable Terraform boilerplate repo: a clean starter structure for modules, multi environments, and CI-ready workflow.
+# aws-observability-dashboard
+
+A reusable Terraform module set that attaches standardised CloudWatch observability to an AWS workload — dashboards, alarms, Logs Insights queries, and synthetic monitoring from a small set of workload inputs.
 
 ---
 
-## What this repo is
+## What this is
 
-This repository is a practical Terraform starter designed to be:
+Point it at your ECS service and ALB, and it generates the core observability package around them:
 
-- easy to navigate as it grows
-- safe to run locally (repeatable scripts)
-- ready for CI (validate + plan on PRs, controlled applies)
+- **4 CloudWatch dashboards** — overview, service detail, operations, and log analysis
+- **7+ CloudWatch alarms** — ALB front-door errors and latency, ECS health, canary failures
+- **10 Logs Insights saved queries** — error analysis, latency, traffic, and deploy-window helpers
+- **CloudWatch Synthetics canaries** — outside-in endpoint monitoring (optional)
 
-This repo does **not** enforce naming conventions. Any names you see are examples of shape and workflow.
-
-You will need to replace any boilerplate naming conventions used (Search for PROJECT_NAME)
-
----
-
-## What this repo contains
-
-- **Environment roots** under `infra/env/` (one folder per environment / AWS account)
-- **Reusable modules** under `infra/modules/` (inputs in, outputs out)
-- A consistent local workflow via `infra/scripts/`:
-  - `fmt → validate (includes tflint) → plan → apply`
-- A GitHub Actions workflow that:
-  - runs **validate + plan** on pull requests
-  - runs **apply** manually via `workflow_dispatch`
-  - supports approvals via GitHub Environments for sensitive environments
+The product is the Terraform module set. The `examples/react-node-demo` app is a realistic ECS target used to prove the package works end to end.
 
 ---
 
-## Git Bash only
+## Supported workload pattern — v1
 
-This repo assumes you run everything in **Git Bash** so we don’t need to accommodate CMD or Linux differences.
+| Dimension   | Supported shape                                      |
+|-------------|------------------------------------------------------|
+| Compute     | ECS with the EC2 launch type                         |
+| Front door  | Application Load Balancer (ALB)                      |
+| Logging     | Structured JSON logs to CloudWatch Logs              |
+| Metrics     | CloudWatch Container Insights (enabled on cluster)   |
 
 ---
 
-## Local setup + end-to-end test (all commands)
+## Repo structure
 
-Run everything below in **Git Bash** from the repo root:
+```
+modules/
+├── core_alarms/            CloudWatch metric alarms
+├── core_canaries/          CloudWatch Synthetics canaries + IAM
+├── core_dashboards/        4 CloudWatch dashboard views
+├── core_logs_insights/     10 saved Logs Insights query definitions
+└── adapters/
+    └── ecs_service/        Wires all core modules for an ECS+ALB workload
+
+examples/
+└── react-node-demo/
+    ├── app/
+    │   ├── backend/        Node/Express API that generates observable signals
+    │   └── frontend/       React UI that exercises all API endpoints
+    └── infra/              ECS cluster, ALB, ECR + the observability adapter
+
+docs/
+├── architecture.md
+├── integration-guide.md
+├── demo-walkthrough.md
+├── incident-walkthrough.md
+└── cost-notes.md
+
+infra/                      Repo-level Terraform boilerplate (state bootstrap, CI)
+```
+
+---
+
+## Quick start
+
+```hcl
+module "observability" {
+  source = "github.com/your-org/aws-observability-dashboard//modules/adapters/ecs_service"
+
+  project     = "my-app"
+  environment = "production"
+  region      = "eu-west-2"
+
+  ecs_cluster_name        = "my-cluster"
+  ecs_service_name        = "my-service"
+  alb_arn_suffix          = aws_lb.main.arn_suffix
+  target_group_arn_suffix = aws_lb_target_group.main.arn_suffix
+  log_group_names         = ["/ecs/my-app/production"]
+
+  create_sns_topic = true
+
+  # Optional: outside-in synthetic monitoring
+  enable_canaries              = true
+  frontend_url                 = "https://my-app.example.com"
+  api_endpoint                 = "https://my-app.example.com/health"
+  canary_artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
+}
+```
+
+See [docs/integration-guide.md](docs/integration-guide.md) for the full variable reference and structured logging requirements.
+
+---
+
+## Running the demo
+
+The `examples/react-node-demo` directory deploys a complete ECS stack — React frontend, Node API, ALB — and wires the observability package against it.
+
+See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for step-by-step instructions.
+
+**Quick version:**
 
 ```bash
-# verify prerequisites in THIS Git Bash shell
+# 1. Bootstrap remote state (first time only)
+bash infra/scripts/bootstrap-state.sh sandbox --region eu-west-2
+
+# 2. Deploy
+cd examples/react-node-demo/infra
+terraform init -backend-config=backend.hcl
+terraform apply -var-file=env.tfvars
+
+# 3. Build and push images, then force new ECS deployments
+# (see docs/demo-walkthrough.md for full commands)
+```
+
+---
+
+## Integration levels
+
+### Level 1 — infrastructure observability (no app changes required)
+
+Dashboards, alarms, Logs Insights, and canaries around existing AWS resources. The only requirement from the application is structured JSON logging to CloudWatch Logs.
+
+### Level 2 — Application Signals (requires app instrumentation)
+
+For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package cannot generate trace data if the application emits none.
+
+---
+
+## Honest limitations
+
+- v1 supports one workload pattern: ECS on EC2 behind an ALB. Lambda, API Gateway, and Fargate adapters are planned for later versions.
+- For Application Signals and service maps, the target application must install and configure the CloudWatch agent and ADOT. The package standardises the observability layer but cannot invent tracing data.
+- Cross-account observability (CloudWatch OAM) is explicitly out of scope for v1.
+
+---
+
+## Docs
+
+| Document                                        | What it covers                                              |
+|-------------------------------------------------|-------------------------------------------------------------|
+| [Architecture](docs/architecture.md)            | Module structure, data flow, integration levels, v1 scope  |
+| [Integration guide](docs/integration-guide.md)  | Variables, structured logging format, usage examples        |
+| [Demo walkthrough](docs/demo-walkthrough.md)    | Step-by-step: deploy, push images, generate signals         |
+| [Incident walkthrough](docs/incident-walkthrough.md) | Using alarms + logs + canaries to diagnose an incident |
+| [Cost notes](docs/cost-notes.md)                | Per-component cost breakdown and production recommendations |
+
+---
+
+## Local development (repo tooling)
+
+```bash
+# Verify prerequisites (Terraform, tflint, AWS CLI)
 bash infra/scripts/prereqs.sh
 
-# switch AWS context (AWS_PROFILE is set to match the environment and must exist under infra/env/)
-export ENVIRONMENT="<aws-account>"
-source infra/scripts/use-env.sh "$ENVIRONMENT"
+# Switch AWS context
+source infra/scripts/use-env.sh sandbox
 
-# confirm which AWS account/role you are about to use
-bash infra/scripts/whoami.sh
+# Format all Terraform
+npm run tf:fmt
 
-# bootstrap remote state + execution role in the CURRENT AWS account
-# creates: S3 state bucket, DynamoDB lock table, OIDC Github Role
-# generates: infra/backend.hcl
-bash infra/scripts/bootstrap-state.sh "$ENVIRONMENT" --region eu-west-2
+# Validate all modules
+npm run tf:validate
 
-# initialise Terraform for the environment using the generated backend config
-cd "infra/env/$ENVIRONMENT"
-terraform init -backend-config=backend.hcl
+# Plan the main infra environment
+npm run tf:plan
+```
 
-# CD BACK TO THE ROOT TO RUN THE BELOW SCRIPTS
+---
 
-# validate (fmt check + validate + tflint)
-bash infra/scripts/validate.sh "$ENVIRONMENT"
+## Contributing
 
-# plan (creates a saved tfplan file)
-bash infra/scripts/plan.sh "$ENVIRONMENT"
-test -f "infra/env/$ENVIRONMENT/tfplan" && echo "tfplan created" || (echo "tfplan missing" && exit 1)
-
-# apply (applies the saved tfplan file)
-bash infra/scripts/apply.sh "$ENVIRONMENT"
+This project follows [Conventional Commits](https://www.conventionalcommits.org/). Use `npm run release` to cut a version.

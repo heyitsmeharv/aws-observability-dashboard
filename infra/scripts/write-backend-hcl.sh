@@ -27,7 +27,7 @@ if [ -z "$ENVIRONMENT" ]; then
 fi
 
 REGION="${AWS_REGION:-eu-west-2}"
-PROJECT_NAME="template-terraform-boilerplate"
+PROJECT_NAME="aws-observability-dashboard"
 
 while [ "${1:-}" != "" ]; do
   case "$1" in
