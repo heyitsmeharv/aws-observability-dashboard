@@ -44,7 +44,7 @@ const metricsStore = {
   entries: [],
 
   record(route, statusCode, durationMs) {
-    const cutoff = Date.now() - 60_000;
+    const cutoff = Date.now() - 300_000; // keep 5 minutes for history charts
     this.entries = this.entries.filter((e) => e.ts > cutoff);
     this.entries.push({ route, statusCode, durationMs, ts: Date.now() });
   },
@@ -78,6 +78,28 @@ const metricsStore = {
       total: fmt(total),
       routes: Object.fromEntries(Object.entries(byRoute).map(([k, v]) => [k, fmt(v)])),
     };
+  },
+
+  // Bin all entries into 10-second intervals for sparkline charts.
+  history() {
+    const BIN = 10_000;
+    const bins = new Map();
+    for (const e of this.entries) {
+      const key = Math.floor(e.ts / BIN) * BIN;
+      if (!bins.has(key)) bins.set(key, { requests: 0, errors: 0, latencySum: 0 });
+      const b = bins.get(key);
+      b.requests++;
+      if (e.statusCode >= 500) b.errors++;
+      b.latencySum += e.durationMs;
+    }
+    return [...bins.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([ts, b]) => ({
+        t: ts,
+        requests: b.requests,
+        errorRate: b.requests > 0 ? +(b.errors / b.requests * 100).toFixed(1) : 0,
+        avgLatencyMs: b.requests > 0 ? Math.round(b.latencySum / b.requests) : 0,
+      }));
   },
 };
 
@@ -219,9 +241,9 @@ app.post("/api/items", (req, res) => {
   res.status(201).json({ item });
 });
 
-// Live metrics — rolling 60-second window, polled by the frontend diagram
+// Live metrics — rolling 60-second summary + 5-minute history, polled by the frontend
 app.get("/api/metrics", (_req, res) => {
-  res.json(metricsStore.summary());
+  res.json({ ...metricsStore.summary(), history: metricsStore.history() });
 });
 
 // CORS for local development

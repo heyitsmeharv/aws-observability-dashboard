@@ -1,36 +1,34 @@
 /**
- * ArchDiagram — SVG architecture diagram with animated request flows.
+ * ArchDiagram — Dark-themed SVG architecture diagram with animated request flows.
  *
  * Nodes: Browser → CloudFront → ALB → ECS Backend → Downstream
- * When a request is in-flight, a packet dot travels from the browser
- * along the relevant path. On completion the destination node briefly
- * flashes green (success) or red (error). Live metrics from /api/metrics
- * are shown on the Backend and Downstream nodes.
+ * Features:
+ *   - Dot-grid dark background
+ *   - Glowing edges with marching dashes when requests are in flight
+ *   - Pulse rings on destination node during flight
+ *   - Glowing packet orb travelling along the active path
+ *   - Node health colouring based on live error-rate metrics
+ *   - Live metrics badge above backend node
  */
-
-import { useEffect, useRef } from "react";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
-const W = 780;
-const H = 260;
+const W = 800;
+const H = 248;
+const NODE_W = 130;
+const NODE_H = 52;
 
 const NODES = {
-  browser:     { x: 30,  y: 110, label: "Browser",     icon: "🌐", monitored: false },
-  cloudfront:  { x: 175, y: 110, label: "CloudFront",  icon: "☁️",  monitored: false },
-  alb:         { x: 340, y: 110, label: "ALB",          icon: "⚖️",  monitored: true  },
-  backend:     { x: 510, y: 110, label: "ECS Backend",  icon: "📦", monitored: true  },
-  downstream:  { x: 510, y: 210, label: "Downstream",   icon: "🔗", monitored: false },
+  browser:    { x: 14,  y: 88,  label: "Browser",    icon: "🌐", monitored: false },
+  cloudfront: { x: 182, y: 88,  label: "CloudFront", icon: "☁️",  monitored: false },
+  alb:        { x: 350, y: 88,  label: "ALB",         icon: "⚖️",  monitored: true  },
+  backend:    { x: 518, y: 88,  label: "Backend",     icon: "📦", monitored: true  },
+  downstream: { x: 518, y: 178, label: "Downstream",  icon: "🔗", monitored: false },
 };
 
-const NODE_W = 110;
-const NODE_H = 50;
-
-// Centre of each node box
 function cx(id) { return NODES[id].x + NODE_W / 2; }
 function cy(id) { return NODES[id].y + NODE_H / 2; }
 
-// Edges: [from, to, pathId]
 const EDGES = [
   ["browser",    "cloudfront", "e-br-cf"],
   ["cloudfront", "alb",        "e-cf-al"],
@@ -38,107 +36,105 @@ const EDGES = [
   ["backend",    "downstream", "e-be-ds"],
 ];
 
-// Which edges + destination are active for each endpoint id
-const FLOW_MAP = {
-  ok:         { edges: ["e-br-cf", "e-cf-al", "e-al-be"], dest: "backend"    },
-  slow:       { edges: ["e-br-cf", "e-cf-al", "e-al-be"], dest: "backend"    },
-  slow5:      { edges: ["e-br-cf", "e-cf-al", "e-al-be"], dest: "backend"    },
-  fail:       { edges: ["e-br-cf", "e-cf-al", "e-al-be"], dest: "backend"    },
-  dependency: { edges: ["e-br-cf", "e-cf-al", "e-al-be", "e-be-ds"], dest: "downstream" },
-  items:      { edges: ["e-br-cf", "e-cf-al", "e-al-be"], dest: "backend"    },
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function edgePath(fromId, toId) {
-  const x1 = NODES[fromId].x + NODE_W;
-  const y1 = NODES[fromId].y + NODE_H / 2;
-
-  // backend → downstream is vertical
   if (fromId === "backend" && toId === "downstream") {
-    const x2 = NODES[toId].x + NODE_W / 2;
-    const y2 = NODES[toId].y;
-    return `M ${cx("backend")} ${NODES["backend"].y + NODE_H} L ${x2} ${y2}`;
+    return `M ${cx("backend")} ${NODES.backend.y + NODE_H} L ${cx("downstream")} ${NODES.downstream.y}`;
   }
-
-  const x2 = NODES[toId].x;
-  const y2 = NODES[toId].y + NODE_H / 2;
-  return `M ${x1} ${y1} L ${x2} ${y2}`;
+  return `M ${NODES[fromId].x + NODE_W} ${cy(fromId)} L ${NODES[toId].x} ${cy(toId)}`;
 }
 
-function nodeColor(id, flight, metrics) {
+// ── Node state ────────────────────────────────────────────────────────────────
+
+function nodeStyle(id, flight, metrics) {
+  const node = NODES[id];
+
   if (flight?.dest === id && flight.phase === "received") {
-    return flight.error ? "#d62728" : "#2ca02c";
+    return flight.error
+      ? { fill: "#2d1117", stroke: "#f85149", sw: 2.5, filter: "url(#glow-red)" }
+      : { fill: "#0d2010", stroke: "#3fb950", sw: 2.5, filter: "url(#glow-green)" };
   }
-  if (flight?.edges?.includes(`e-al-be`) && id === "alb" && flight.phase === "flying") {
-    return "#1f77b4";
+
+  if (id === "alb" && flight?.phase === "flying" && flight.edges.includes("e-al-be")) {
+    return { fill: "#0d1f40", stroke: "#58a6ff", sw: 2, filter: "url(#glow-blue)" };
   }
-  // Colour by recent error rate
-  if (metrics && id === "backend") {
+
+  if (id === "backend" && metrics?.total.requests > 0) {
     const r = metrics.total.errorRate;
-    if (r >= 50) return "#d62728";
-    if (r >= 10) return "#ff7f0e";
-    if (metrics.total.requests > 0) return "#2ca02c";
+    if (r >= 50) return { fill: "#2d1117", stroke: "#f85149", sw: 2, filter: "url(#glow-red)" };
+    if (r >= 10) return { fill: "#1e180a", stroke: "#d29922", sw: 2, filter: "url(#glow-yellow)" };
+    return { fill: "#0d2010", stroke: "#3fb950", sw: 1.5, filter: "url(#glow-green)" };
   }
-  return "#f0f4ff";
+
+  if (node.monitored) {
+    return { fill: "#0d1831", stroke: "#1f4788", sw: 1.5, filter: null };
+  }
+
+  return { fill: "#161b22", stroke: "#30363d", sw: 1.5, filter: null };
 }
 
-function nodeStroke(id, flight) {
-  if (flight?.dest === id && flight.phase !== "idle") return 2.5;
-  if (NODES[id].monitored) return 1.5;
-  return 1;
-}
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-function nodeStrokeColor(id, flight, metrics) {
-  const bg = nodeColor(id, flight, metrics);
-  if (bg !== "#f0f4ff") return bg;
-  if (NODES[id].monitored) return "#6b9bd1";
-  return "#ccc";
+function PulseRing({ nodeId, flight }) {
+  if (flight?.dest !== nodeId || flight.phase !== "flying") return null;
+  const color = flight.error ? "#f85149" : "#58a6ff";
+  const ncx = cx(nodeId);
+  const ncy = cy(nodeId);
+  return (
+    <>
+      <circle cx={ncx} cy={ncy} r={30} fill="none" stroke={color} strokeWidth={1.5} opacity={0}>
+        <animate attributeName="r"       from="28" to="52" dur="1.3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.7" to="0" dur="1.3s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={ncx} cy={ncy} r={30} fill="none" stroke={color} strokeWidth={1} opacity={0}>
+        <animate attributeName="r"       from="28" to="52" dur="1.3s" begin="0.65s" repeatCount="indefinite" />
+        <animate attributeName="opacity" from="0.5" to="0" dur="1.3s" begin="0.65s" repeatCount="indefinite" />
+      </circle>
+    </>
+  );
 }
-
-// ── Packet dot animation ──────────────────────────────────────────────────────
 
 function PacketDot({ flightEdges, phase, durationMs, error }) {
   if (phase !== "flying") return null;
+  const color = error ? "#f85149" : "#58a6ff";
+  const glowFilter = error ? "url(#glow-red)" : "url(#glow-blue)";
 
-  // Animate one dot per active edge, staggered
   return flightEdges.map((edgeId, i) => {
     const edge = EDGES.find((e) => e[2] === edgeId);
     if (!edge) return null;
-    const d = edgePath(edge[0], edge[1]);
     const delay = (i * durationMs) / (flightEdges.length * 2.5);
+    const dur = `${durationMs / 1000}s`;
+    const begin = `${delay / 1000}s`;
     return (
-      <circle key={edgeId} r={6} fill={error ? "#d62728" : "#1f77b4"} opacity={0.9}>
-        <animateMotion
-          dur={`${durationMs / 1000}s`}
-          begin={`${delay / 1000}s`}
-          fill="freeze"
-          calcMode="spline"
-          keySplines="0.4 0 0.6 1"
-        >
-          <mpath href={`#${edgeId}`} />
-        </animateMotion>
-      </circle>
+      <g key={edgeId}>
+        <circle r={12} fill={color} opacity={0.12} filter="url(#blur-corona)">
+          <animateMotion dur={dur} begin={begin} fill="freeze" calcMode="spline" keySplines="0.4 0 0.6 1">
+            <mpath href={`#${edgeId}`} />
+          </animateMotion>
+        </circle>
+        <circle r={5} fill={color} opacity={0.95} filter={glowFilter}>
+          <animateMotion dur={dur} begin={begin} fill="freeze" calcMode="spline" keySplines="0.4 0 0.6 1">
+            <mpath href={`#${edgeId}`} />
+          </animateMotion>
+        </circle>
+      </g>
     );
   });
 }
 
-// ── Metric badge on a node ────────────────────────────────────────────────────
-
-function MetricBadge({ nodeId, metrics }) {
-  if (!metrics || nodeId !== "backend") return null;
+function MetricBadge({ metrics }) {
+  if (!metrics?.total.requests) return null;
   const { requests, errorRate, avgLatencyMs } = metrics.total;
-  if (requests === 0) return null;
-
-  const bg = errorRate >= 50 ? "#d62728" : errorRate >= 10 ? "#ff7f0e" : "#2ca02c";
-  const nx = NODES[nodeId].x;
-  const ny = NODES[nodeId].y;
-
+  const color = errorRate >= 50 ? "#f85149" : errorRate >= 10 ? "#d29922" : "#3fb950";
+  const nx = NODES.backend.x;
+  const ny = NODES.backend.y;
   return (
     <g>
-      <rect x={nx} y={ny - 28} width={NODE_W} height={22} rx={4} fill={bg} opacity={0.9} />
-      <text x={nx + NODE_W / 2} y={ny - 13} textAnchor="middle" fontSize={10} fill="#fff" fontFamily="monospace">
-        {requests}req · {errorRate}%err · {avgLatencyMs}ms
+      <rect x={nx} y={ny - 24} width={NODE_W} height={18} rx={4}
+        fill="#0d1117" stroke={color} strokeWidth={0.75} opacity={0.95} />
+      <text x={nx + NODE_W / 2} y={ny - 11} textAnchor="middle"
+        fontSize={9.5} fill={color}
+        fontFamily="'Consolas', 'Courier New', monospace" fontWeight={600}>
+        {requests}req · {errorRate}%err · {avgLatencyMs}ms avg
       </text>
     </g>
   );
@@ -150,19 +146,59 @@ export default function ArchDiagram({ flight, metrics }) {
   const activeEdges = flight?.phase === "flying" ? flight.edges : [];
 
   return (
-    <div style={{ background: "#fafbff", border: "1px solid #dde4f0", borderRadius: 8, padding: "12px 8px 4px" }}>
+    <div style={{
+      background: "#0d1117",
+      border: "1px solid #30363d",
+      borderRadius: 10,
+      padding: "12px 10px 8px",
+    }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
         <defs>
-          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L8,3 z" fill="#bbb" />
+          {/* Dot-grid background pattern */}
+          <pattern id="dot-grid" patternUnits="userSpaceOnUse" width="22" height="22">
+            <circle cx="11" cy="11" r="0.85" fill="#21262d" />
+          </pattern>
+
+          {/* Glow filters */}
+          <filter id="glow-blue" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="glow-green" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="glow-red" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="glow-yellow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="blur-corona" x="-150%" y="-150%" width="400%" height="400%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="5" />
+          </filter>
+
+          {/* Arrow markers */}
+          <marker id="arr-off" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+            <path d="M0,0.5 L0,5.5 L7,3 z" fill="#30363d" />
           </marker>
-          {/* Define edge paths for animateMotion mpath references */}
+          <marker id="arr-on" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+            <path d="M0,0.5 L0,5.5 L7,3 z" fill="#58a6ff" />
+          </marker>
+
+          {/* Edge paths for animateMotion mpath references */}
           {EDGES.map(([from, to, id]) => (
             <path key={id} id={id} d={edgePath(from, to)} fill="none" />
           ))}
         </defs>
 
-        {/* ── Edges ── */}
+        {/* Background */}
+        <rect width={W} height={H} fill="#0d1117" />
+        <rect width={W} height={H} fill="url(#dot-grid)" opacity={0.65} />
+
+        {/* Edges */}
         {EDGES.map(([from, to, id]) => {
           const active = activeEdges.includes(id);
           return (
@@ -170,16 +206,22 @@ export default function ArchDiagram({ flight, metrics }) {
               key={id}
               d={edgePath(from, to)}
               fill="none"
-              stroke={active ? "#1f77b4" : "#ccc"}
+              stroke={active ? "#58a6ff" : "#21262d"}
               strokeWidth={active ? 2.5 : 1.5}
               strokeDasharray={active ? "6 3" : "none"}
-              markerEnd="url(#arrow)"
+              markerEnd={active ? "url(#arr-on)" : "url(#arr-off)"}
+              filter={active ? "url(#glow-blue)" : undefined}
               style={active ? { animation: "march 0.4s linear infinite" } : {}}
             />
           );
         })}
 
-        {/* ── Packet dots ── */}
+        {/* Pulse rings (behind nodes) */}
+        {Object.keys(NODES).map((id) => (
+          <PulseRing key={id} nodeId={id} flight={flight} />
+        ))}
+
+        {/* Packet orb */}
         <PacketDot
           key={flight?.id}
           flightEdges={flight?.edges ?? []}
@@ -188,44 +230,41 @@ export default function ArchDiagram({ flight, metrics }) {
           error={flight?.error}
         />
 
-        {/* ── Nodes ── */}
+        {/* Nodes */}
         {Object.entries(NODES).map(([id, node]) => {
-          const bg = nodeColor(id, flight, metrics);
-          const stroke = nodeStrokeColor(id, flight, metrics);
-          const sw = nodeStroke(id, flight);
-          const isActive = flight?.dest === id && flight.phase !== "idle";
-
+          const { fill, stroke, sw, filter } = nodeStyle(id, flight, metrics);
+          const isReceived = flight?.dest === id && flight?.phase === "received";
           return (
             <g key={id}>
-              <MetricBadge nodeId={id} metrics={metrics} />
               <rect
-                x={node.x}
-                y={node.y}
-                width={NODE_W}
-                height={NODE_H}
-                rx={8}
-                fill={bg}
+                x={node.x} y={node.y}
+                width={NODE_W} height={NODE_H}
+                rx={9}
+                fill={fill}
                 stroke={stroke}
                 strokeWidth={sw}
-                style={isActive && flight.phase === "received" ? { animation: "pulse 0.4s ease-out" } : {}}
+                filter={filter ?? undefined}
+                style={isReceived ? { animation: "flash-in 0.3s ease-out" } : {}}
               />
-              {/* Monitored badge */}
+              {/* Monitored pulse dot */}
               {node.monitored && (
-                <text x={node.x + NODE_W - 6} y={node.y + 12} textAnchor="end" fontSize={9} fill="#6b9bd1">
-                  ◉ monitored
-                </text>
+                <circle cx={node.x + NODE_W - 9} cy={node.y + 9} r={3} fill="#388bfd" opacity={0.8}>
+                  <animate attributeName="opacity" values="0.8;0.3;0.8" dur="2.5s" repeatCount="indefinite" />
+                </circle>
               )}
-              <text x={node.x + NODE_W / 2} y={node.y + 19} textAnchor="middle" fontSize={16}>
+              {/* Icon */}
+              <text x={node.x + NODE_W / 2} y={node.y + 22} textAnchor="middle" fontSize={15}>
                 {node.icon}
               </text>
+              {/* Label */}
               <text
                 x={node.x + NODE_W / 2}
-                y={node.y + 38}
+                y={node.y + 41}
                 textAnchor="middle"
-                fontSize={11}
+                fontSize={10.5}
                 fontWeight={600}
-                fill={bg === "#f0f4ff" ? "#333" : "#fff"}
-                fontFamily="system-ui, sans-serif"
+                fill={fill === "#161b22" || fill === "#0d1831" ? "#8b949e" : "#e6edf3"}
+                fontFamily="system-ui, -apple-system, sans-serif"
               >
                 {node.label}
               </text>
@@ -233,22 +272,17 @@ export default function ArchDiagram({ flight, metrics }) {
           );
         })}
 
-        {/* ── Legend ── */}
-        <text x={8} y={H - 6} fontSize={10} fill="#aaa" fontFamily="system-ui">
-          Last 60s · auto-refreshes every 5s
+        {/* Metric badge — rendered after nodes so it sits on top */}
+        <MetricBadge metrics={metrics} />
+
+        {/* Legend */}
+        <text x={8} y={H - 6} fontSize={9} fill="#484f58" fontFamily="system-ui">
+          Last 60s · auto-refreshes every 5s · ● = CloudWatch alarm
+        </text>
+        <text x={W - 8} y={H - 6} fontSize={9} fill="#484f58" fontFamily="system-ui" textAnchor="end">
+          Browser → CloudFront → ALB → ECS
         </text>
       </svg>
-
-      <style>{`
-        @keyframes march {
-          to { stroke-dashoffset: -18; }
-        }
-        @keyframes pulse {
-          0%   { opacity: 1; }
-          50%  { opacity: 0.4; }
-          100% { opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
