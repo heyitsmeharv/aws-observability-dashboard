@@ -1,16 +1,16 @@
 locals {
   name_prefix = "${var.project}-${var.environment}"
 
-  # Convenience: list of all alarm names for the alarm status widget
-  all_alarm_names = compact([
-    var.alarm_names.alb_5xx,
-    var.alarm_names.alb_target_5xx,
-    var.alarm_names.alb_latency_p99,
-    var.alarm_names.alb_unhealthy_hosts,
-    var.alarm_names.ecs_running_tasks,
-    var.alarm_names.ecs_cpu,
-    var.alarm_names.ecs_memory,
-    try(var.alarm_names.canary_failure, null),
+  # Full ARNs required by the alarm widget type (names are rejected by the API)
+  all_alarm_arns = compact([
+    var.alarm_arns.alb_5xx,
+    var.alarm_arns.alb_target_5xx,
+    var.alarm_arns.alb_latency_p99,
+    var.alarm_arns.alb_unhealthy_hosts,
+    var.alarm_arns.ecs_running_tasks,
+    var.alarm_arns.ecs_cpu,
+    var.alarm_arns.ecs_memory,
+    try(var.alarm_arns.canary_failure, null),
   ])
 
   # Primary log group for Logs Insights widgets (first in the list)
@@ -154,7 +154,7 @@ resource "aws_cloudwatch_dashboard" "overview" {
         height = 4
         properties = {
           title  = "Alarm Status"
-          alarms = local.all_alarm_names
+          alarms = local.all_alarm_arns
         }
       },
     ]
@@ -190,11 +190,11 @@ resource "aws_cloudwatch_dashboard" "service" {
         width  = 12
         height = 6
         properties = {
-          title  = "Request Count by Status Class"
-          region = var.region
-          view   = "timeSeries"
+          title   = "Request Count by Status Class"
+          region  = var.region
+          view    = "timeSeries"
           stacked = true
-          period = 60
+          period  = 60
           metrics = [
             ["AWS/ApplicationELB", "HTTPCode_Target_2XX_Count", "LoadBalancer", var.alb_arn_suffix, { stat = "Sum", label = "2xx", color = "#2ca02c" }],
             ["AWS/ApplicationELB", "HTTPCode_Target_3XX_Count", "LoadBalancer", var.alb_arn_suffix, { stat = "Sum", label = "3xx", color = "#1f77b4" }],
@@ -253,6 +253,7 @@ resource "aws_cloudwatch_dashboard" "service" {
           view   = "gauge"
           stat   = "Average"
           period = 60
+          yAxis  = { left = { min = 0 } }
           metrics = [
             ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
           ]
@@ -315,7 +316,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
         height = 6
         properties = {
           title  = "All Alarms — ${var.project} ${var.environment}"
-          alarms = local.all_alarm_names
+          alarms = local.all_alarm_arns
         }
       },
 
@@ -350,6 +351,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           view   = "gauge"
           stat   = "Average"
           period = 60
+          yAxis  = { left = { min = 0 } }
           metrics = [
             ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
           ]
@@ -367,6 +369,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           view   = "gauge"
           stat   = "Average"
           period = 60
+          yAxis  = { left = { min = 0 } }
           metrics = [
             ["AWS/ApplicationELB", "ActiveConnectionCount", "LoadBalancer", var.alb_arn_suffix]
           ]

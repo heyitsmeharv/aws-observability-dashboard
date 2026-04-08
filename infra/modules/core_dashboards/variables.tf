@@ -44,7 +44,7 @@ variable "canary_name" {
   default     = null
 }
 
-variable "alarm_names" {
+variable "alarm_arns" {
   type = object({
     alb_5xx             = string
     alb_target_5xx      = string
@@ -55,5 +55,5 @@ variable "alarm_names" {
     ecs_memory          = string
     canary_failure      = optional(string)
   })
-  description = "Map of alarm names from the core_alarms module. Used to render alarm widgets on dashboards."
+  description = "Map of alarm ARNs from the core_alarms module. Used for alarm widgets — CloudWatch requires full ARNs, not names."
 }

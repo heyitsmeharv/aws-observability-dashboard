@@ -89,8 +89,8 @@ module "dashboards" {
   ecs_service_name        = var.ecs_service_name
   log_group_names         = var.log_group_names
 
-  canary_name  = local.frontend_canary_name
-  alarm_names  = module.alarms.alarm_names
+  canary_name = local.frontend_canary_name
+  alarm_arns  = module.alarms.alarm_arns
 
   depends_on = [module.alarms]
 }
