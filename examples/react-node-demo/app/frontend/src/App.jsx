@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ArchDiagram from "./ArchDiagram.jsx";
+import Charts from "./Charts.jsx";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -10,7 +11,7 @@ const ENDPOINTS = [
     description: "Fast 200 — normal traffic",
     url: `${API}/ok`,
     method: "GET",
-    badgeColor: "#2ca02c",
+    badgeColor: "#3fb950",
     expectedMs: 200,
   },
   {
@@ -19,7 +20,7 @@ const ENDPOINTS = [
     description: "3-second delay — P99 latency spike",
     url: `${API}/slow?ms=3000`,
     method: "GET",
-    badgeColor: "#ff7f0e",
+    badgeColor: "#d29922",
     expectedMs: 3200,
   },
   {
@@ -28,7 +29,7 @@ const ENDPOINTS = [
     description: "5-second delay — triggers latency alarm",
     url: `${API}/slow?ms=5000`,
     method: "GET",
-    badgeColor: "#ff7f0e",
+    badgeColor: "#d29922",
     expectedMs: 5200,
   },
   {
@@ -37,16 +38,16 @@ const ENDPOINTS = [
     description: "Intentional 500 — triggers 5xx alarm",
     url: `${API}/fail`,
     method: "GET",
-    badgeColor: "#d62728",
+    badgeColor: "#f85149",
     expectedMs: 200,
   },
   {
     id: "dependency",
-    label: "Dependency (30% fail)",
+    label: "Dependency (30%↯)",
     description: "Flaky downstream — shows dependency path",
     url: `${API}/dependency?failRate=0.3&latencyMs=800`,
     method: "GET",
-    badgeColor: "#9467bd",
+    badgeColor: "#bc8cff",
     expectedMs: 900,
   },
   {
@@ -55,53 +56,48 @@ const ENDPOINTS = [
     description: "Normal business read — clean 200 traffic",
     url: `${API}/items`,
     method: "GET",
-    badgeColor: "#1f77b4",
+    badgeColor: "#58a6ff",
     expectedMs: 200,
   },
 ];
 
-// ── Result box ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function ResultBox({ result }) {
-  if (!result) return null;
-  const isError = result.status >= 400;
-  const color = isError ? "#d62728" : "#2ca02c";
-  return (
-    <div style={{
-      marginTop: 10,
-      padding: "10px 14px",
-      borderRadius: 6,
-      border: `1px solid ${color}`,
-      background: isError ? "#fff5f5" : "#f6fff6",
-      fontFamily: "monospace",
-      fontSize: 12,
-    }}>
-      <div style={{ marginBottom: 4, color }}>
-        <strong>HTTP {result.status}</strong> — {result.durationMs}ms
-      </div>
-      <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {JSON.stringify(result.body, null, 2)}
-      </pre>
-    </div>
-  );
+function statusColor(s) {
+  if (!s || s === 0) return "#f85149";
+  if (s >= 500) return "#f85149";
+  if (s >= 400) return "#d29922";
+  return "#3fb950";
+}
+
+function endpointPath(url) {
+  try {
+    const q = url.indexOf("?");
+    return new URL(q === -1 ? url : url.slice(0, q), location.href).pathname;
+  } catch {
+    const q = url.indexOf("?");
+    return q === -1 ? url : url.slice(0, q);
+  }
 }
 
 // ── Endpoint card ─────────────────────────────────────────────────────────────
 
-function EndpointCard({ endpoint, onFlight }) {
-  const [result, setResult] = useState(null);
+function EndpointCard({ endpoint, onFlight, onComplete }) {
   const [loading, setLoading] = useState(false);
 
   const call = async () => {
     setLoading(true);
-    setResult(null);
-
     const flightId = `${endpoint.id}-${Date.now()}`;
+    const edges = endpoint.id === "dependency"
+      ? ["e-br-cf", "e-cf-al", "e-al-be", "e-be-ds"]
+      : ["e-br-cf", "e-cf-al", "e-al-be"];
+    const dest = endpoint.id === "dependency" ? "downstream" : "backend";
+
     onFlight({
       id: flightId,
       endpointId: endpoint.id,
-      edges: endpointEdges(endpoint.id),
-      dest: endpointDest(endpoint.id),
+      edges,
+      dest,
       durationMs: endpoint.expectedMs,
       phase: "flying",
       error: false,
@@ -112,17 +108,28 @@ function EndpointCard({ endpoint, onFlight }) {
       const res = await fetch(endpoint.url, { method: endpoint.method });
       const body = await res.json().catch(() => ({}));
       const durationMs = Date.now() - start;
-      setResult({ status: res.status, body, durationMs });
-      onFlight((f) => f?.id === flightId
-        ? { ...f, phase: "received", error: res.status >= 500 }
-        : f
-      );
-      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1200);
+      onFlight((f) => f?.id === flightId ? { ...f, phase: "received", error: res.status >= 500 } : f);
+      onComplete({
+        id: flightId,
+        method: endpoint.method,
+        path: endpointPath(endpoint.url),
+        status: res.status,
+        durationMs,
+        ts: Date.now(),
+      });
+      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1500);
     } catch (err) {
       const durationMs = Date.now() - start;
-      setResult({ status: 0, body: { error: err.message }, durationMs });
       onFlight((f) => f?.id === flightId ? { ...f, phase: "received", error: true } : f);
-      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1200);
+      onComplete({
+        id: flightId,
+        method: endpoint.method,
+        path: endpointPath(endpoint.url),
+        status: 0,
+        durationMs,
+        ts: Date.now(),
+      });
+      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1500);
     } finally {
       setLoading(false);
     }
@@ -130,79 +137,171 @@ function EndpointCard({ endpoint, onFlight }) {
 
   return (
     <div style={{
-      border: "1px solid #e0e0e0",
+      background: "#161b22",
+      border: `1px solid ${loading ? "#388bfd44" : "#30363d"}`,
       borderRadius: 8,
-      padding: "12px 14px",
-      marginBottom: 10,
-      background: "#fff",
+      padding: "10px 12px",
+      transition: "border-color 0.15s",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
         <span style={{
-          background: endpoint.badgeColor,
-          color: "#fff",
-          borderRadius: 4,
-          padding: "1px 7px",
-          fontSize: 11,
-          fontWeight: 600,
+          fontSize: 9,
+          fontWeight: 700,
+          padding: "1px 5px",
+          borderRadius: 3,
+          background: endpoint.badgeColor + "22",
+          color: endpoint.badgeColor,
+          border: `1px solid ${endpoint.badgeColor}44`,
+          letterSpacing: 0.5,
         }}>
           {endpoint.method}
         </span>
-        <strong style={{ fontSize: 14 }}>{endpoint.label}</strong>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#e6edf3" }}>{endpoint.label}</span>
+        {loading && (
+          <span style={{ marginLeft: "auto", color: "#388bfd", fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
+            ···
+          </span>
+        )}
       </div>
-      <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8, lineHeight: 1.4 }}>
         {endpoint.description}
       </div>
       <button
         onClick={call}
         disabled={loading}
         style={{
-          padding: "5px 14px",
+          width: "100%",
+          padding: "5px 0",
           borderRadius: 5,
-          border: "none",
-          background: loading ? "#ccc" : "#1f77b4",
-          color: "#fff",
+          border: `1px solid ${loading ? "#21262d" : "#388bfd"}`,
+          background: loading ? "transparent" : "#1c2d4a",
+          color: loading ? "#484f58" : "#58a6ff",
           cursor: loading ? "not-allowed" : "pointer",
           fontWeight: 600,
-          fontSize: 13,
+          fontSize: 11,
+          transition: "all 0.15s",
         }}
       >
-        {loading ? "Calling…" : "Call"}
+        {loading ? "In flight…" : "Fire request"}
       </button>
-      <ResultBox result={result} />
     </div>
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Stat card ─────────────────────────────────────────────────────────────────
 
-function endpointEdges(id) {
-  const base = ["e-br-cf", "e-cf-al", "e-al-be"];
-  if (id === "dependency") return [...base, "e-be-ds"];
-  return base;
+function StatCard({ label, value, unit = "", accent, note }) {
+  return (
+    <div style={{
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderTop: `2px solid ${accent}`,
+      borderRadius: 8,
+      padding: "14px 16px",
+      flex: 1,
+      minWidth: 0,
+    }}>
+      <div style={{
+        fontSize: 26,
+        fontWeight: 700,
+        color: "#e6edf3",
+        fontVariantNumeric: "tabular-nums",
+        lineHeight: 1.1,
+      }}>
+        {value}
+        {unit && (
+          <span style={{ fontSize: 13, fontWeight: 400, color: "#6e7681", marginLeft: 2 }}>
+            {unit}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: "#8b949e", marginTop: 5 }}>{label}</div>
+      {note && <div style={{ fontSize: 10, color: "#484f58", marginTop: 2 }}>{note}</div>}
+    </div>
+  );
 }
 
-function endpointDest(id) {
-  return id === "dependency" ? "downstream" : "backend";
+// ── Section heading ───────────────────────────────────────────────────────────
+
+function SectionHeading({ children }) {
+  return (
+    <div style={{
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#8b949e",
+      letterSpacing: "0.08em",
+      textTransform: "uppercase",
+      marginBottom: 10,
+      paddingBottom: 6,
+      borderBottom: "1px solid #21262d",
+    }}>
+      {children}
+    </div>
+  );
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── Request log ───────────────────────────────────────────────────────────────
+
+function RequestLog({ log }) {
+  if (!log.length) {
+    return (
+      <div style={{ padding: "14px 16px", color: "#484f58", fontSize: 12, textAlign: "center" }}>
+        No requests yet — fire one above
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 180, overflowY: "auto" }}>
+      {log.map((r, i) => (
+        <div
+          key={r.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "4px 10px",
+            borderRadius: 5,
+            background: i === 0 ? "#161b22" : "transparent",
+            border: `1px solid ${i === 0 ? "#30363d" : "transparent"}`,
+            fontFamily: "'Consolas', 'Courier New', monospace",
+            fontSize: 11,
+            animation: i === 0 ? "slide-in 0.2s ease-out" : "none",
+          }}
+        >
+          <span style={{ color: statusColor(r.status), fontWeight: 700, minWidth: 30 }}>
+            {r.status || "ERR"}
+          </span>
+          <span style={{ color: "#6e7681", fontSize: 10 }}>{r.method}</span>
+          <span style={{ color: "#8b949e" }}>{r.path}</span>
+          <span style={{ marginLeft: "auto", color: "#484f58", fontSize: 10 }}>{r.durationMs}ms</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [flight, setFlight] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [burstLoading, setBurstLoading] = useState(false);
   const [burstResults, setBurstResults] = useState(null);
+  const [requestLog, setRequestLog] = useState([]);
 
-  // Poll metrics every 5 seconds
   useEffect(() => {
-    const fetchMetrics = () =>
+    const poll = () =>
       fetch(`${API}/metrics`)
         .then((r) => r.json())
         .then(setMetrics)
         .catch(() => {});
-    fetchMetrics();
-    const id = setInterval(fetchMetrics, 5000);
+    poll();
+    const id = setInterval(poll, 5000);
     return () => clearInterval(id);
+  }, []);
+
+  const handleComplete = useCallback((entry) => {
+    setRequestLog((prev) => [entry, ...prev].slice(0, 20));
   }, []);
 
   const runBurst = async () => {
@@ -216,117 +315,254 @@ export default function App() {
     });
     const statuses = await Promise.all(calls);
     const summary = statuses.reduce((acc, s) => {
-      const bucket = s >= 500 ? "5xx" : s >= 400 ? "4xx" : s >= 200 ? "2xx" : "err";
-      acc[bucket] = (acc[bucket] ?? 0) + 1;
+      const b = s >= 500 ? "5xx" : s >= 400 ? "4xx" : s >= 200 ? "2xx" : "err";
+      acc[b] = (acc[b] ?? 0) + 1;
       return acc;
     }, {});
     setBurstResults(summary);
     setBurstLoading(false);
   };
 
+  const t = metrics?.total;
+  const errorAccent = t
+    ? t.errorRate >= 50 ? "#f85149" : t.errorRate >= 10 ? "#d29922" : "#3fb950"
+    : "#484f58";
+
   return (
-    <div style={{
-      maxWidth: 1100,
-      margin: "0 auto",
-      padding: "28px 16px",
-      fontFamily: "'Segoe UI', system-ui, sans-serif",
-      color: "#222",
-    }}>
-      <h1 style={{ margin: "0 0 2px", fontSize: 22 }}>aws-observability-dashboard</h1>
-      <p style={{ color: "#666", margin: "0 0 20px", fontSize: 14 }}>
-        Fire requests to generate CloudWatch signals — watch the diagram animate the flow.
-      </p>
+    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 20px 48px" }}>
 
-      {/* Architecture diagram */}
-      <ArchDiagram flight={flight} metrics={metrics} />
-
-      <div style={{ height: 20 }} />
-
-      {/* Two-column layout below the diagram */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20, alignItems: "start" }}>
-
-        {/* Endpoint cards */}
+      {/* ── Header ── */}
+      <div style={{
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        marginBottom: 20,
+      }}>
         <div>
-          <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>Endpoints</h2>
-          {ENDPOINTS.map((ep) => (
-            <EndpointCard key={ep.id} endpoint={ep} onFlight={setFlight} />
-          ))}
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e6edf3", margin: 0, letterSpacing: "-0.02em" }}>
+            aws-observability-dashboard
+          </h1>
+          <p style={{ fontSize: 13, color: "#6e7681", margin: "4px 0 0", lineHeight: 1.5 }}>
+            Fire requests to generate CloudWatch signals — watch metrics, alarms, and traffic flow in real time.
+          </p>
         </div>
-
-        {/* Right column: burst + metrics summary */}
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 4, flexShrink: 0 }}>
           <div style={{
-            border: "1px solid #e0e0e0",
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: "#3fb950",
+            animation: "live-pulse 2s ease-in-out infinite",
+          }} />
+          <span style={{ fontSize: 11, color: "#3fb950", fontWeight: 700, letterSpacing: "0.08em" }}>
+            LIVE
+          </span>
+        </div>
+      </div>
+
+      {/* ── Stat cards ── */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        <StatCard
+          label="Requests (last 60s)"
+          value={t?.requests ?? "—"}
+          accent="#58a6ff"
+          note="rolling window"
+        />
+        <StatCard
+          label="Error rate"
+          value={t ? `${t.errorRate}` : "—"}
+          unit="%"
+          accent={errorAccent}
+          note={t?.errors ? `${t.errors} error${t.errors !== 1 ? "s" : ""}` : "no errors"}
+        />
+        <StatCard
+          label="Avg latency"
+          value={t?.avgLatencyMs ?? "—"}
+          unit="ms"
+          accent="#d29922"
+          note="all routes"
+        />
+        <StatCard
+          label="Monitored"
+          value="2"
+          accent="#bc8cff"
+          note="ALB + ECS backend"
+        />
+      </div>
+
+      {/* ── Architecture diagram ── */}
+      <div style={{ marginBottom: 20 }}>
+        <SectionHeading>Architecture</SectionHeading>
+        <ArchDiagram flight={flight} metrics={metrics} />
+      </div>
+
+      {/* ── Two-column layout ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20, marginBottom: 20 }}>
+
+        {/* Left: endpoint cards + burst */}
+        <div>
+          <SectionHeading>Endpoints</SectionHeading>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+            {ENDPOINTS.map((ep) => (
+              <EndpointCard
+                key={ep.id}
+                endpoint={ep}
+                onFlight={setFlight}
+                onComplete={handleComplete}
+              />
+            ))}
+          </div>
+
+          {/* Burst panel */}
+          <div style={{
+            background: "#161b22",
+            border: "1px solid #30363d",
             borderRadius: 8,
             padding: "14px 16px",
-            background: "#fff",
-            marginBottom: 16,
           }}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Burst traffic</h3>
-            <p style={{ margin: "0 0 10px", fontSize: 13, color: "#555" }}>
-              10 mixed requests across all endpoints simultaneously.
-            </p>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>
+              Burst traffic
+            </div>
+            <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 12, lineHeight: 1.5 }}>
+              10 concurrent requests across all endpoints — generates immediate signal spikes visible in CloudWatch.
+            </div>
             <button
               onClick={runBurst}
               disabled={burstLoading}
               style={{
-                padding: "6px 16px",
-                borderRadius: 5,
-                border: "none",
-                background: burstLoading ? "#ccc" : "#2ca02c",
-                color: "#fff",
+                width: "100%",
+                padding: "7px 0",
+                borderRadius: 6,
+                border: `1px solid ${burstLoading ? "#21262d" : "#3fb95055"}`,
+                background: burstLoading ? "transparent" : "#0f2819",
+                color: burstLoading ? "#484f58" : "#3fb950",
                 cursor: burstLoading ? "not-allowed" : "pointer",
                 fontWeight: 600,
-                fontSize: 13,
+                fontSize: 12,
+                transition: "all 0.15s",
               }}
             >
-              {burstLoading ? "Running…" : "Run burst"}
+              {burstLoading ? "Running burst…" : "Run burst"}
             </button>
             {burstResults && (
-              <div style={{ marginTop: 10, fontFamily: "monospace", fontSize: 12 }}>
-                {JSON.stringify(burstResults)}
+              <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {Object.entries(burstResults).map(([b, count]) => (
+                  <div
+                    key={b}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: 4,
+                      background: b === "5xx" || b === "err" ? "#2d1117" : "#0f2819",
+                      color: b === "5xx" || b === "err" ? "#f85149" : "#3fb950",
+                      fontFamily: "monospace",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      border: `1px solid ${b === "5xx" || b === "err" ? "#f8514933" : "#3fb95033"}`,
+                    }}
+                  >
+                    {b}: {count}
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Live metrics summary */}
-          {metrics && (
+        {/* Right: sparkline charts + route breakdown */}
+        <div>
+          <SectionHeading>Signals (last 5 min)</SectionHeading>
+          <Charts history={metrics?.history} />
+
+          {metrics?.routes && Object.keys(metrics.routes).length > 0 && (
             <div style={{
-              border: "1px solid #e0e0e0",
+              background: "#161b22",
+              border: "1px solid #30363d",
               borderRadius: 8,
-              padding: "14px 16px",
-              background: "#fff",
+              overflow: "hidden",
+              marginTop: 8,
             }}>
-              <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Last 60s</h3>
-              <MetricRow label="Requests" value={metrics.total.requests} />
-              <MetricRow label="Error rate" value={`${metrics.total.errorRate}%`} color={metrics.total.errorRate > 10 ? "#d62728" : "#2ca02c"} />
-              <MetricRow label="Avg latency" value={`${metrics.total.avgLatencyMs}ms`} />
-              {Object.entries(metrics.routes).length > 0 && (
-                <>
-                  <div style={{ borderTop: "1px solid #f0f0f0", margin: "10px 0 8px", fontSize: 11, color: "#999" }}>by route</div>
+              <div style={{
+                padding: "8px 12px",
+                borderBottom: "1px solid #21262d",
+                fontSize: 10,
+                color: "#6e7681",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}>
+                Routes · last 60s
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <tbody>
                   {Object.entries(metrics.routes).map(([route, r]) => (
-                    <div key={route} style={{ fontSize: 11, marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
-                      <code style={{ color: "#555" }}>{route}</code>
-                      <span style={{ color: r.errorRate > 0 ? "#d62728" : "#2ca02c" }}>
-                        {r.requests}req {r.errorRate > 0 ? `· ${r.errorRate}%err` : ""}
-                      </span>
-                    </div>
+                    <tr key={route} style={{ borderBottom: "1px solid #161b22" }}>
+                      <td style={{
+                        padding: "5px 12px",
+                        fontFamily: "'Consolas', monospace",
+                        color: "#8b949e",
+                        fontSize: 10,
+                      }}>
+                        {route}
+                      </td>
+                      <td style={{
+                        padding: "5px 6px",
+                        textAlign: "right",
+                        color: "#e6edf3",
+                        fontVariantNumeric: "tabular-nums",
+                      }}>
+                        {r.requests}
+                      </td>
+                      <td style={{
+                        padding: "5px 6px",
+                        textAlign: "right",
+                        color: r.errorRate > 0 ? "#f85149" : "#3fb950",
+                        fontVariantNumeric: "tabular-nums",
+                      }}>
+                        {r.errorRate > 0 ? `${r.errorRate}%` : "✓"}
+                      </td>
+                      <td style={{
+                        padding: "5px 12px",
+                        textAlign: "right",
+                        color: "#6e7681",
+                        fontVariantNumeric: "tabular-nums",
+                      }}>
+                        {r.avgLatencyMs}ms
+                      </td>
+                    </tr>
                   ))}
-                </>
-              )}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
-    </div>
-  );
-}
 
-function MetricRow({ label, value, color }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 13 }}>
-      <span style={{ color: "#666" }}>{label}</span>
-      <strong style={{ color: color ?? "#222" }}>{value}</strong>
+      {/* ── Request log ── */}
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{
+          padding: "10px 14px",
+          borderBottom: "1px solid #21262d",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#8b949e",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}>
+            Request log
+          </div>
+          <div style={{ fontSize: 10, color: "#484f58" }}>
+            {requestLog.length > 0 ? `last ${requestLog.length}` : "empty"}
+          </div>
+        </div>
+        <div style={{ padding: "8px 6px" }}>
+          <RequestLog log={requestLog} />
+        </div>
+      </div>
     </div>
   );
 }
