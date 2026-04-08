@@ -18,7 +18,7 @@ locals {
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "${local.name_prefix}"
+  dashboard_name = local.name_prefix
 
   dashboard_body = jsonencode({
     widgets = concat(
@@ -60,11 +60,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         # ══════════════════════════════════════════════════════════════════════
 
         {
-          type   = "text"
-          x      = 0
-          y      = 8
-          width  = 24
-          height = 1
+          type       = "text"
+          x          = 0
+          y          = 8
+          width      = 24
+          height     = 1
           properties = { markdown = "### Front door" }
         },
 
@@ -249,11 +249,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         # ══════════════════════════════════════════════════════════════════════
 
         {
-          type   = "text"
-          x      = 0
-          y      = 33
-          width  = 24
-          height = 1
+          type       = "text"
+          x          = 0
+          y          = 33
+          width      = 24
+          height     = 1
           properties = { markdown = "### ECS health" }
         },
 
@@ -290,7 +290,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             stat   = "Average"
             period = 60
             metrics = [
-              ["ECS/ContainerInsights", "CpuUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -303,13 +303,13 @@ resource "aws_cloudwatch_dashboard" "main" {
           width  = 8
           height = 6
           properties = {
-            title  = "ECS Memory Utilisation (MB)"
+            title  = "ECS Memory Utilisation (%)"
             region = var.region
             view   = "timeSeries"
             stat   = "Average"
             period = 60
             metrics = [
-              ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -329,7 +329,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             period = 60
             yAxis  = { left = { min = 0, max = 100 } }
             metrics = [
-              ["ECS/ContainerInsights", "CpuUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -342,14 +342,14 @@ resource "aws_cloudwatch_dashboard" "main" {
           width  = 8
           height = 6
           properties = {
-            title  = "ECS Memory Utilised (MB)"
+            title  = "ECS Memory Utilisation (%)"
             region = var.region
             view   = "gauge"
             stat   = "Average"
             period = 60
-            yAxis  = { left = { min = 0, max = 1024 } }
+            yAxis  = { left = { min = 0, max = 100 } }
             metrics = [
-              ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },

@@ -8,7 +8,7 @@ A reusable Terraform module set that attaches standardised CloudWatch observabil
 
 Point it at your ECS service and ALB, and it generates the core observability package around them:
 
-- **4 CloudWatch dashboards** — overview, service detail, operations, and log analysis
+- **1 CloudWatch dashboard** — overview, service detail, operations, and log analysis sections in a single view
 - **7+ CloudWatch alarms** — ALB front-door errors and latency, ECS health, canary failures
 - **10 Logs Insights saved queries** — error analysis, latency, traffic, and deploy-window helpers
 - **CloudWatch Synthetics canaries** — outside-in endpoint monitoring (optional)
@@ -31,10 +31,10 @@ The product is the Terraform module set. The `examples/react-node-demo` app is a
 ## Repo structure
 
 ```
-modules/
+infra/modules/
 ├── core_alarms/            CloudWatch metric alarms
 ├── core_canaries/          CloudWatch Synthetics canaries + IAM
-├── core_dashboards/        4 CloudWatch dashboard views
+├── core_dashboards/        Single CloudWatch dashboard with overview/service/ops/log sections
 ├── core_logs_insights/     10 saved Logs Insights query definitions
 └── adapters/
     └── ecs_service/        Wires all core modules for an ECS+ALB workload
@@ -62,7 +62,7 @@ infra/                      Repo-level Terraform boilerplate (state bootstrap, C
 
 ```hcl
 module "observability" {
-  source = "github.com/your-org/aws-observability-dashboard//modules/adapters/ecs_service"
+  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
 
   project     = "my-app"
   environment = "production"
@@ -84,7 +84,7 @@ module "observability" {
 }
 ```
 
-See [docs/integration-guide.md](docs/integration-guide.md) for the full variable reference and structured logging requirements.
+See [docs/integration-guide.md](docs/integration-guide.md) for the full variable reference, output contract, and structured logging requirements.
 
 ---
 

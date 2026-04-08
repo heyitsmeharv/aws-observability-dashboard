@@ -57,7 +57,7 @@ This creates:
 - ALB with path-based routing
 - ECS task definitions and services
 - CloudWatch log groups
-- **Observability package** — 4 dashboards, 7 alarms, 10 Logs Insights queries
+- **Observability package** — 1 composed dashboard, 7 alarms, 10 Logs Insights queries
 
 Note the outputs — you'll need `alb_dns_name` and the ECR repository URLs.
 
@@ -157,16 +157,13 @@ for i in $(seq 1 10); do curl -s "http://${ALB_DNS}/api/dependency" > /dev/null;
 
 ---
 
-## Step 8 — Inspect the dashboards
+## Step 8 — Inspect the dashboard
 
 Open the CloudWatch console and navigate to **Dashboards**. You should see:
 
-| Dashboard                      | What to look for                                          |
-|--------------------------------|-----------------------------------------------------------|
-| `obs-demo-sandbox-overview`    | ALB request count rising, 5xx spike if you ran errors     |
-| `obs-demo-sandbox-service`     | Latency percentile split, ECS task count stable           |
-| `obs-demo-sandbox-operations`  | Alarm status strip — 5xx alarm should be IN ALARM         |
-| `obs-demo-sandbox-log-analysis`| Latest errors table populated with structured log entries |
+| Dashboard             | What to look for                                                                       |
+|-----------------------|----------------------------------------------------------------------------------------|
+| `obs-demo-sandbox`    | Front-door charts rising, ECS health stable, alarm strip updating, latest errors table populated |
 
 ---
 

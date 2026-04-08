@@ -1,5 +1,6 @@
 {
   "name": "aws-observability-dashboard",
+  "private": true,
   "description": "Terraform-based CloudWatch observability package for AWS workloads, with a sample React/Node app that demonstrates dashboards, alarms, canaries, insights, and service visibility end to end.",
   "version": "0.0.1",
   "author": "Adam Harvey",

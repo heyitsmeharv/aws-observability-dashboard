@@ -131,8 +131,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_cpu" {
   alarm_description   = "ECS service CPU utilisation is above threshold. Consider scaling out or investigating a CPU spike."
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.evaluation_periods
-  metric_name         = "CpuUtilized"
-  namespace           = "ECS/ContainerInsights"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
   period              = var.period_seconds
   statistic           = "Average"
   threshold           = var.ecs_cpu_threshold_percent
@@ -154,8 +154,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_memory" {
   alarm_description   = "ECS service memory utilisation is above threshold. Risk of OOM kills if sustained."
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.evaluation_periods
-  metric_name         = "MemoryUtilized"
-  namespace           = "ECS/ContainerInsights"
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/ECS"
   period              = var.period_seconds
   statistic           = "Average"
   threshold           = var.ecs_memory_threshold_percent

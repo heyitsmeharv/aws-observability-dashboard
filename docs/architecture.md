@@ -4,7 +4,7 @@
 
 `aws-observability-dashboard` is a reusable Terraform module set that attaches standardised CloudWatch observability to an AWS workload. Given a small set of workload inputs — cluster name, service name, ALB ARN, log groups — it creates:
 
-- CloudWatch dashboards (overview, service, operations, log analysis)
+- A CloudWatch dashboard with overview, service, operations, and log analysis sections
 - CloudWatch alarms (ALB front-door, ECS health, canary failure)
 - CloudWatch Logs Insights query packs (error analysis, latency, traffic, deploy helpers)
 - CloudWatch Synthetics canaries for outside-in endpoint monitoring
@@ -28,10 +28,10 @@ The product is the observability package. The `examples/react-node-demo` app is 
 ## Module structure
 
 ```
-modules/
+infra/modules/
 ├── core_alarms/            CloudWatch metric alarms
 ├── core_canaries/          CloudWatch Synthetics canaries + IAM
-├── core_dashboards/        CloudWatch dashboards (4 views)
+├── core_dashboards/        Single CloudWatch dashboard composition
 ├── core_logs_insights/     CloudWatch Logs Insights query definitions
 └── adapters/
     └── ecs_service/        Wires all four core modules for an ECS+ALB workload
@@ -69,8 +69,8 @@ CloudWatch Synthetics Canaries ─────────────► CloudW
                                               CloudWatch Alarms
                                                         │
                                                         ▼
-                                              CloudWatch Dashboards
-                                              (4 views assembled from above signals)
+                                              CloudWatch Dashboard
+                                              (single composed view assembled from above signals)
 ```
 
 ---
@@ -79,7 +79,7 @@ CloudWatch Synthetics Canaries ─────────────► CloudW
 
 ### Level 1 — metrics, alarms, logs, canaries (no app changes required)
 
-The core modules observe the AWS infrastructure layer: ALB metrics, ECS Container Insights metrics, application logs already flowing to CloudWatch Logs, and outside-in canary checks. No changes to the application are required beyond structured JSON logging.
+The core modules observe the AWS infrastructure layer: ALB metrics, ECS service utilisation metrics, ECS Container Insights task-count metrics, application logs already flowing to CloudWatch Logs, and outside-in canary checks. No changes to the application are required beyond structured JSON logging.
 
 ### Level 2 — Application Signals (requires app instrumentation)
 

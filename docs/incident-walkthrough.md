@@ -10,20 +10,20 @@ You receive an alarm notification: `obs-demo-sandbox-alb-5xx-count` is in ALARM.
 
 ---
 
-## Step 1 — Orient on the operations dashboard
+## Step 1 — Orient on the dashboard alarm section
 
-Open the `obs-demo-sandbox-operations` dashboard. The alarm status strip shows two alarms red:
+Open the `obs-demo-sandbox` dashboard and look at the alarm strip near the top. Two alarms are red:
 
 - `obs-demo-sandbox-alb-5xx-count` — ALARM
 - `obs-demo-sandbox-alb-latency-p99` — ALARM
 
-The ECS running task count and CPU/memory gauges look normal. The problem is in the application, not the infrastructure.
+The ECS running task count and CPU/memory widgets look normal. The problem is in the application, not the infrastructure.
 
 ---
 
-## Step 2 — Check the service dashboard
+## Step 2 — Check the service widgets
 
-Open `obs-demo-sandbox-service`. The **Request Count by Status Class** widget shows a clear spike in `5xx` starting at 14:32. The **ALB Target Response Time Percentiles** widget shows P99 climbing from ~200ms to ~4s at the same time.
+Stay on `obs-demo-sandbox` and scroll to the service widgets. The **Request Count by Status Class** chart shows a clear spike in `5xx` starting at 14:32. The **ALB Target Response Time Percentiles** chart shows P99 climbing from ~200ms to ~4s at the same time.
 
 This pattern — 5xx errors alongside elevated latency — suggests the application is struggling under load or a specific code path is failing slowly.
 
@@ -107,8 +107,7 @@ Within 2 evaluation periods (2 minutes), the alarms return to OK and the canary 
 | Signal          | What it showed                                                    |
 |-----------------|-------------------------------------------------------------------|
 | Alarm           | ALB 5xx and P99 latency in ALARM — confirmed something was wrong  |
-| Operations dash | ECS healthy, narrowed to application layer                        |
-| Service dash    | Pinpointed the time the degradation started                       |
+| Dashboard       | ECS healthy, narrowed to application layer and pinpointed timing  |
 | Logs Insights   | Identified `/api/dependency` as the top failing route             |
 | Logs Insights   | Confirmed slow response times on that route                       |
 | Deploy query    | Correlated the error spike with the deployment window             |

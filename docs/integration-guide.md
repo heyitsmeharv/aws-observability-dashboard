@@ -44,7 +44,7 @@ Fields used by specific queries:
 
 ```hcl
 module "observability" {
-  source = "github.com/your-org/aws-observability-dashboard//modules/adapters/ecs_service"
+  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
 
   project     = "my-app"
   environment = "production"
@@ -87,7 +87,7 @@ module "observability" {
 | `ecs_service_name`        | string         | ECS service name                                          |
 | `alb_arn_suffix`          | string         | ALB `arn_suffix` attribute                                |
 | `target_group_arn_suffix` | string         | Target group `arn_suffix` attribute                       |
-| `log_group_names`         | list(string)   | CloudWatch log group names                                |
+| `log_group_names`         | list(string)   | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry. |
 
 ### Optional
 
@@ -110,12 +110,18 @@ module "observability" {
 ## Outputs
 
 ```hcl
-# Dashboard names — open directly in the CloudWatch console
-module.observability.dashboard_names
-# => { overview = "my-app-production-overview", service = "...", ... }
+# Dashboard — open directly in the CloudWatch console
+module.observability.dashboard_name
+# => "my-app-production"
+
+# Dashboard ARN
+module.observability.dashboard_arn
 
 # Alarm ARNs — reference in other modules or EventBridge rules
 module.observability.alarm_arns
+
+# Logs Insights saved queries
+module.observability.query_definition_ids
 
 # Canary names
 module.observability.frontend_canary_name
@@ -140,7 +146,7 @@ alb_arn_suffix = aws_lb.main.arn_suffix
 
 ## Enabling Container Insights
 
-Container Insights must be enabled on the ECS cluster for the ECS metric alarms and dashboard widgets to have data.
+Container Insights must be enabled on the ECS cluster for the running-task alarm and dashboard widgets to have data. CPU and memory percentage alarms use the built-in ECS service utilisation metrics in the `AWS/ECS` namespace.
 
 ```hcl
 resource "aws_ecs_cluster" "main" {
