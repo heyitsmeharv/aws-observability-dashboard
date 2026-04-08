@@ -12,14 +12,14 @@ output "alarm_names" {
 
 # ── Dashboard outputs ─────────────────────────────────────────────────────────
 
-output "dashboard_names" {
-  description = "Map of dashboard role to CloudWatch dashboard name."
-  value       = module.dashboards.dashboard_names
+output "dashboard_name" {
+  description = "CloudWatch dashboard name."
+  value       = module.dashboards.dashboard_name
 }
 
-output "dashboard_arns" {
-  description = "Map of dashboard role to CloudWatch dashboard ARN."
-  value       = module.dashboards.dashboard_arns
+output "dashboard_arn" {
+  description = "CloudWatch dashboard ARN."
+  value       = module.dashboards.dashboard_arn
 }
 
 # ── Logs Insights outputs ─────────────────────────────────────────────────────

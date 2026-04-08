@@ -33,9 +33,9 @@ output "backend_service_name" {
   value       = module.demo.backend_service_name
 }
 
-output "dashboard_names" {
-  description = "CloudWatch dashboard names."
-  value       = module.demo.dashboard_names
+output "dashboard_name" {
+  description = "CloudWatch dashboard name."
+  value       = module.demo.dashboard_name
 }
 
 output "alarm_names" {
