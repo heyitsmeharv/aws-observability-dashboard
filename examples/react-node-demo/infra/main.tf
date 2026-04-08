@@ -4,6 +4,14 @@ locals {
   # Resolve VPC and subnets: use provided values or fall back to defaults
   vpc_id     = var.vpc_id != null ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.default[0].ids
+
+  # Explicit tags on every resource so the demo shows up under var.project
+  # ("obs-demo") in the console, overriding the root default_tags which carry
+  # the root project name ("aws-observability-dashboard").
+  common_tags = {
+    Project     = var.project
+    Environment = var.environment
+  }
 }
 
 data "aws_caller_identity" "current" {}
@@ -39,6 +47,8 @@ resource "aws_ecr_repository" "backend" {
   image_scanning_configuration {
     scan_on_push = true
   }
+
+  tags = local.common_tags
 }
 
 # ── CloudWatch log group ──────────────────────────────────────────────────────
@@ -46,6 +56,8 @@ resource "aws_ecr_repository" "backend" {
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ecs/${local.name_prefix}/backend"
   retention_in_days = 30
+
+  tags = local.common_tags
 }
 
 # ── S3 bucket for canary artifacts ───────────────────────────────────────────
@@ -53,6 +65,8 @@ resource "aws_cloudwatch_log_group" "backend" {
 resource "aws_s3_bucket" "canary_artifacts" {
   count  = var.enable_canaries ? 1 : 0
   bucket = "${local.name_prefix}-${data.aws_caller_identity.current.account_id}-canary-artifacts"
+
+  tags = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "canary_artifacts" {
@@ -69,6 +83,8 @@ resource "aws_s3_bucket_public_access_block" "canary_artifacts" {
 
 resource "aws_s3_bucket" "frontend" {
   bucket = "${local.name_prefix}-${data.aws_caller_identity.current.account_id}-frontend"
+
+  tags = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "frontend" {
@@ -97,6 +113,7 @@ resource "aws_cloudfront_distribution" "this" {
   price_class         = "PriceClass_100"
 
   comment = "${local.name_prefix} demo frontend"
+  tags    = local.common_tags
 
   # S3 origin for static frontend assets
   origin {
@@ -237,6 +254,8 @@ resource "aws_ssm_parameter" "cloudfront_distribution_id" {
   name  = "/${var.project}/${var.environment}/cloudfront_distribution_id"
   type  = "String"
   value = aws_cloudfront_distribution.this.id
+
+  tags = local.common_tags
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -260,6 +279,8 @@ resource "aws_security_group" "alb" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_security_group" "ecs_instances" {
@@ -281,6 +302,8 @@ resource "aws_security_group" "ecs_instances" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = local.common_tags
 }
 
 # ── IAM: EC2 instance profile for ECS container instances ─────────────────────
@@ -296,6 +319,8 @@ resource "aws_iam_role" "ecs_instance" {
       Action    = "sts:AssumeRole"
     }]
   })
+
+  tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_instance_ec2_container_service" {
@@ -311,6 +336,8 @@ resource "aws_iam_role_policy_attachment" "ecs_instance_ssm" {
 resource "aws_iam_instance_profile" "ecs_instance" {
   name = "${local.name_prefix}-ecs-instance"
   role = aws_iam_role.ecs_instance.name
+
+  tags = local.common_tags
 }
 
 # ── IAM: ECS task execution role ──────────────────────────────────────────────
@@ -326,6 +353,8 @@ resource "aws_iam_role" "task_execution" {
       Action    = "sts:AssumeRole"
     }]
   })
+
+  tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "task_execution" {
@@ -341,6 +370,8 @@ resource "aws_lb" "demo" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = local.subnet_ids
+
+  tags = local.common_tags
 }
 
 resource "aws_lb_target_group" "backend" {
@@ -357,6 +388,8 @@ resource "aws_lb_target_group" "backend" {
     interval            = 30
     matcher             = "200"
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_lb_listener" "http" {
@@ -379,6 +412,8 @@ resource "aws_ecs_cluster" "demo" {
     name  = "containerInsights"
     value = "enabled"
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_ecs_cluster_capacity_providers" "demo" {
@@ -421,6 +456,8 @@ resource "aws_launch_template" "ecs_instance" {
       Environment = var.environment
     }
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_autoscaling_group" "ecs_instances" {
@@ -443,6 +480,18 @@ resource "aws_autoscaling_group" "ecs_instances" {
     propagate_at_launch = true
   }
 
+  tag {
+    key                 = "Project"
+    value               = var.project
+    propagate_at_launch = false
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = false
+  }
+
   lifecycle {
     ignore_changes = [desired_capacity]
   }
@@ -460,6 +509,8 @@ resource "aws_ecs_capacity_provider" "demo" {
       target_capacity = 80
     }
   }
+
+  tags = local.common_tags
 }
 
 # ── ECS task definition ───────────────────────────────────────────────────────
@@ -471,6 +522,7 @@ resource "aws_ecs_task_definition" "backend" {
   execution_role_arn       = aws_iam_role.task_execution.arn
   cpu                      = 256
   memory                   = 512
+  tags                     = local.common_tags
 
   container_definitions = jsonencode([
     {
@@ -508,6 +560,7 @@ resource "aws_ecs_service" "backend" {
   cluster         = aws_ecs_cluster.demo.id
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = 1
+  tags            = local.common_tags
 
   capacity_provider_strategy {
     capacity_provider = aws_ecs_capacity_provider.demo.name
