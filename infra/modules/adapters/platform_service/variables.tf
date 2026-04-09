@@ -1,12 +1,17 @@
 variable "service" {
   type = object({
-    name             = string
-    environment      = string
-    region           = string
-    kind             = optional(string)
-    alb_arn          = string
-    target_group_arn = string
-    log_group_names  = optional(list(string))
+    name        = string
+    environment = string
+    region      = string
+    kind        = optional(string)
+    ingress = optional(object({
+      kind             = optional(string)
+      alb_arn          = optional(string)
+      target_group_arn = optional(string)
+      public_base_url  = optional(string)
+      api_health_url   = optional(string)
+    }))
+    log_group_names = optional(list(string))
     ecs = optional(object({
       cluster_arn        = optional(string)
       service_arn        = optional(string)
@@ -14,8 +19,16 @@ variable "service" {
       service_name       = optional(string)
       app_container_name = optional(string)
     }))
+    ec2 = optional(object({
+      autoscaling_group_name = optional(string)
+      instance_ids           = optional(list(string))
+      instance_tag_selector  = optional(map(string))
+    }))
 
-    # Legacy compatibility fields. New consumers should prefer service.ecs.
+    # Legacy compatibility fields. New consumers should prefer service.ingress
+    # and service.ecs.
+    alb_arn          = optional(string)
+    target_group_arn = optional(string)
     ecs_service_arn  = optional(string)
     ecs_cluster_name = optional(string)
     ecs_service_name = optional(string)
@@ -51,6 +64,32 @@ variable "service" {
       length(trimspace(var.service.ecs.app_container_name)) > 0
     )
     error_message = "service.ecs.app_container_name must be null or a non-empty string."
+  }
+
+  validation {
+    condition = try(var.service.ec2, null) == null ? true : (
+      try(var.service.ec2.instance_ids, null) == null ? true : (
+        length(var.service.ec2.instance_ids) > 0 &&
+        alltrue([for id in var.service.ec2.instance_ids : length(trimspace(id)) > 0])
+      )
+    )
+    error_message = "service.ec2.instance_ids must be null or contain at least one non-empty EC2 instance ID."
+  }
+
+  validation {
+    condition = try(var.service.ingress, null) == null ? true : (
+      try(var.service.ingress.public_base_url, null) == null ||
+      can(regex("^https?://", var.service.ingress.public_base_url))
+    )
+    error_message = "service.ingress.public_base_url must be null or a fully-qualified http(s) URL."
+  }
+
+  validation {
+    condition = try(var.service.ingress, null) == null ? true : (
+      try(var.service.ingress.api_health_url, null) == null ||
+      can(regex("^https?://", var.service.ingress.api_health_url))
+    )
+    error_message = "service.ingress.api_health_url must be null or a fully-qualified http(s) URL."
   }
 }
 

@@ -17,8 +17,8 @@
  *             requestId, sourceIp, message
  */
 
-import express from "express";
-import { randomUUID } from "crypto";
+const express = require("express");
+const { randomUUID } = require("crypto");
 
 const PORT = parseInt(process.env.PORT ?? "4000", 10);
 const NODE_ENV = process.env.NODE_ENV ?? "development";

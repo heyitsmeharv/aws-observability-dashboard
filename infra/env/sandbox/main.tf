@@ -23,13 +23,17 @@ module "observability" {
   source = "../../../infra/modules/adapters/platform_service"
 
   service = {
-    name             = local.demo_project
-    environment      = var.environment
-    region           = var.aws_region
-    kind             = "ecs_ec2_alb"
-    alb_arn          = module.demo.alb_arn
-    target_group_arn = module.demo.backend_target_group_arn
-    log_group_names  = module.demo.log_group_names
+    name        = local.demo_project
+    environment = var.environment
+    region      = var.aws_region
+    kind        = "ecs_ec2_alb"
+    ingress = {
+      alb_arn          = module.demo.alb_arn
+      target_group_arn = module.demo.backend_target_group_arn
+      public_base_url  = module.demo.frontend_url
+      api_health_url   = module.demo.api_health_url
+    }
+    log_group_names = module.demo.log_group_names
     ecs = {
       cluster_arn        = module.demo.ecs_cluster_arn
       service_arn        = module.demo.backend_service_arn
@@ -47,13 +51,7 @@ module "observability" {
 
   canaries = {
     enabled               = var.demo_enable_canaries
-    frontend_url          = var.demo_enable_canaries ? module.demo.frontend_url : null
-    api_endpoint          = var.demo_enable_canaries ? module.demo.api_health_url : null
     artifacts_bucket_name = var.demo_enable_canaries ? module.demo.canary_artifacts_bucket_name : null
-  }
-
-  logging = {
-    enabled = true
   }
 
   tracing = {

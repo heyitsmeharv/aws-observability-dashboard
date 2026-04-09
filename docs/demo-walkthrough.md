@@ -156,7 +156,7 @@ for i in $(seq 1 15); do curl -s "http://${ALB_DNS}/api/fail" > /dev/null; done
 for i in $(seq 1 10); do curl -s "http://${ALB_DNS}/api/dependency" > /dev/null; done
 ```
 
-If `enable_tracing` is on, the dependency traffic above also generates Application Signals traces for the backend service.
+If `enable_tracing` is on, the dependency traffic above also generates Application Signals traces for the backend service. The demo backend uses the CommonJS ADOT startup path rather than ESM because AWS currently recommends CommonJS for more reliable Node.js Application Signals behaviour.
 
 ---
 

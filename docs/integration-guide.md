@@ -4,7 +4,7 @@
 
 - Terraform >= 1.6
 - AWS provider ~> 5.0
-- An ECS service on the EC2 launch type, running behind an ALB
+- An ECS service on the EC2 or Fargate launch type, running behind an ALB
 - Application logs already flowing to CloudWatch Logs in structured JSON format
 - Container Insights enabled on the ECS cluster
 
@@ -47,13 +47,17 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name             = "my-app"
-    environment      = "production"
-    region           = "eu-west-2"
-    kind             = "ecs_fargate_alb"
-    alb_arn          = var.alb_arn
-    target_group_arn = var.target_group_arn
-    log_group_names  = ["/ecs/my-app/production"]
+    name        = "my-app"
+    environment = "production"
+    region      = "eu-west-2"
+    kind        = "ecs_fargate_alb"
+    ingress = {
+      alb_arn          = var.alb_arn
+      target_group_arn = var.target_group_arn
+      public_base_url  = "https://my-app.example.com"
+      api_health_url   = "https://my-app.example.com/health"
+    }
+    log_group_names = ["/ecs/my-app/production"]
     ecs = {
       cluster_arn        = var.ecs_cluster_arn
       service_arn        = var.ecs_service_arn
@@ -72,8 +76,6 @@ module "observability" {
 
   canaries = {
     enabled               = true
-    frontend_url          = "https://my-app.example.com"
-    api_endpoint          = "https://my-app.example.com/health"
     artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
   }
 
@@ -88,7 +90,7 @@ module "observability" {
 
 ## Onboarding an existing service
 
-The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services. The recommended public contract is ARN-first: pass the ECS cluster/service ARNs, ALB ARN, target group ARN, and log groups inside the `service` object, and let the module derive the CloudWatch dimensions internally.
+The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services. The recommended public contract is ARN-first: pass the ECS cluster/service ARNs plus the ALB and target group ARNs inside `service.ingress`, and let the module derive the CloudWatch dimensions internally.
 
 In v1, that means:
 
@@ -110,13 +112,17 @@ If you also have a separate internal UI or demo dashboard, treat that as a consu
 | `name`                 | string | Service/project name used in resource naming |
 | `environment`          | string | Environment name such as `sandbox`, `staging`, or `production` |
 | `region`               | string | AWS region |
-| `kind`                 | string | Workload shape. v1 supports `ecs_ec2_alb` and `ecs_fargate_alb` |
-| `alb_arn`              | string | Full ALB ARN |
-| `target_group_arn`     | string | Full target group ARN |
+| `kind`                 | string | Workload shape. v1 implements `ecs_ec2_alb` and `ecs_fargate_alb`. `ec2_alb` is scaffolded into the public contract for a future adapter |
+| `ingress.kind`         | string | Ingress shape. v1 supports `alb` only |
+| `ingress.alb_arn`      | string | Full ALB ARN |
+| `ingress.target_group_arn` | string | Full target group ARN |
+| `ingress.public_base_url` | string | Optional frontend URL. Used as the default canary target when `canaries.frontend_url` is not set |
+| `ingress.api_health_url` | string | Optional API health URL. Used as the default API canary target when `canaries.api_endpoint` is not set |
 | `log_group_names`      | list(string) | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry |
 | `ecs.cluster_arn`      | string | Optional ECS cluster ARN. Used to resolve the cluster name when supplied |
 | `ecs.service_arn`      | string | Recommended public attachment point. The module derives cluster and service names from this ARN |
 | `ecs.app_container_name` | string | Required when `tracing.mode = "managed"` so the owning stack can identify the app container |
+| `ec2.*`                | object | Reserved for the future EC2 adapter. The public contract accepts it, but v1 does not implement EC2-specific dashboards or alarms yet |
 
 Legacy compatibility inputs remain accepted for now:
 
@@ -183,7 +189,7 @@ Default log field mappings:
 | `service_name`          | `service.name` | Trace service name used for filtering and labels |
 | `enable_canary_tracing` | `enabled`      | Enables active tracing for CloudWatch Synthetics canaries |
 
-The reusable module publishes tracing links and optional canary tracing. `mode = "managed"` is the public contract flag to use when the surrounding stack owns workload instrumentation, as the sandbox demo does. For arbitrary existing services, the monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent sidecar plus Node.js ESM auto-instrumentation.
+The reusable module publishes tracing links and optional canary tracing. `mode = "managed"` is the public contract flag to use when the surrounding stack owns workload instrumentation, as the sandbox demo does. For arbitrary existing services, the monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent sidecar plus Node.js CommonJS auto-instrumentation, because AWS currently recommends CommonJS over ESM for Application Signals.
 
 ---
 
@@ -247,7 +253,7 @@ If you need direct control over the lower-level CloudWatch wiring, the `ecs_serv
 source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
 ```
 
-That adapter exposes ALB and target group ARN suffixes directly and is intended for advanced consumers. The recommended public entry point is `platform_service`.
+That adapter exposes ALB and target group ARN suffixes directly and is intended for advanced consumers. The recommended public entry point is `platform_service`, which now routes internally to workload-specific wrappers.
 
 ---
 
@@ -295,4 +301,4 @@ log("info", "request completed", {
 
 ## Application Signals (Level 2 — optional)
 
-For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically for arbitrary existing services — it requires manual instrumentation of the target application and a sidecar-based CloudWatch agent setup for ECS or Fargate workloads. Daemon mode is intentionally out of scope.
+For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically for arbitrary existing services — it requires manual instrumentation of the target application and a sidecar-based CloudWatch agent setup for ECS or Fargate workloads. Daemon mode is intentionally out of scope, and the future `ec2_alb` adapter will use a host-level installation pattern instead of a sidecar.
