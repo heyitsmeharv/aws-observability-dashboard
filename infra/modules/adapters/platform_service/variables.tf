@@ -4,11 +4,21 @@ variable "service" {
     environment      = string
     region           = string
     kind             = optional(string)
+    alb_arn          = string
+    target_group_arn = string
+    log_group_names  = optional(list(string))
+    ecs = optional(object({
+      cluster_arn        = optional(string)
+      service_arn        = optional(string)
+      cluster_name       = optional(string)
+      service_name       = optional(string)
+      app_container_name = optional(string)
+    }))
+
+    # Legacy compatibility fields. New consumers should prefer service.ecs.
     ecs_service_arn  = optional(string)
     ecs_cluster_name = optional(string)
     ecs_service_name = optional(string)
-    alb_arn          = string
-    target_group_arn = string
   })
   description = "Top-level workload identity and infrastructure attachment points for the service being observed."
 
@@ -28,19 +38,25 @@ variable "service" {
   }
 
   validation {
-    condition = (
-      length(trimspace(var.service.ecs_service_arn != null ? var.service.ecs_service_arn : "")) > 0
-      ) || (
-      length(trimspace(var.service.ecs_cluster_name != null ? var.service.ecs_cluster_name : "")) > 0 &&
-      length(trimspace(var.service.ecs_service_name != null ? var.service.ecs_service_name : "")) > 0
+    condition = try(var.service.log_group_names, null) == null ? true : (
+      length(var.service.log_group_names) > 0 &&
+      alltrue([for name in var.service.log_group_names : length(trimspace(name)) > 0])
     )
-    error_message = "Provide either service.ecs_service_arn or both service.ecs_cluster_name and service.ecs_service_name."
+    error_message = "service.log_group_names must be null or contain at least one non-empty CloudWatch Logs group name."
+  }
+
+  validation {
+    condition = try(var.service.ecs, null) == null ? true : (
+      try(var.service.ecs.app_container_name, null) == null ||
+      length(trimspace(var.service.ecs.app_container_name)) > 0
+    )
+    error_message = "service.ecs.app_container_name must be null or a non-empty string."
   }
 }
 
 variable "logging" {
   type = object({
-    log_group_names = list(string)
+    log_group_names = optional(list(string))
     fields = optional(object({
       level       = optional(string)
       route       = optional(string)
@@ -51,11 +67,15 @@ variable "logging" {
       source_ip   = optional(string)
     }))
   })
-  description = "Structured logging configuration used for saved Logs Insights queries and dashboard log widgets."
+  description = "Optional structured logging configuration. service.log_group_names is the preferred public input; logging.log_group_names remains as a compatibility fallback."
+  default     = {}
 
   validation {
-    condition     = length(var.logging.log_group_names) > 0 && alltrue([for name in var.logging.log_group_names : length(trimspace(name)) > 0])
-    error_message = "logging.log_group_names must contain at least one non-empty CloudWatch Logs group name."
+    condition = try(var.logging.log_group_names, null) == null ? true : (
+      length(var.logging.log_group_names) > 0 &&
+      alltrue([for name in var.logging.log_group_names : length(trimspace(name)) > 0])
+    )
+    error_message = "logging.log_group_names must be null or contain at least one non-empty CloudWatch Logs group name."
   }
 }
 
@@ -96,9 +116,10 @@ variable "canaries" {
 variable "tracing" {
   type = object({
     enabled               = optional(bool)
+    mode                  = optional(string)
     service_name          = optional(string)
     enable_canary_tracing = optional(bool)
   })
-  description = "Optional OpenTelemetry/Application Signals metadata. The workload must still be instrumented outside this module."
+  description = "Optional OpenTelemetry/Application Signals metadata. Use mode = managed when the surrounding stack owns workload instrumentation; use external when traces already exist."
   default     = {}
 }

@@ -35,10 +35,25 @@ output "backend_service_name" {
 
 output "dashboard_name" {
   description = "CloudWatch dashboard name."
-  value       = module.demo.dashboard_name
+  value       = module.observability.dashboard_name
 }
 
 output "alarm_names" {
   description = "CloudWatch alarm names."
-  value       = module.demo.alarm_names
+  value       = module.observability.alarm_names
+}
+
+output "dashboard_url" {
+  description = "CloudWatch dashboard URL."
+  value       = module.observability.dashboard_url
+}
+
+output "trace_map_url" {
+  description = "Trace map URL for the demo backend. Null when tracing is disabled."
+  value       = module.observability.xray_trace_map_url
+}
+
+output "trace_details_url" {
+  description = "Trace details URL for the demo backend. Null when tracing is disabled."
+  value       = module.observability.xray_traces_url
 }

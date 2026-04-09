@@ -68,17 +68,18 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name            = "my-app"
-    environment     = "production"
-    region          = "eu-west-2"
-    kind            = "ecs_ec2_alb"
-    ecs_service_arn = var.ecs_service_arn
-    alb_arn         = var.alb_arn
+    name             = "my-app"
+    environment      = "production"
+    region           = "eu-west-2"
+    kind             = "ecs_fargate_alb"
+    alb_arn          = var.alb_arn
     target_group_arn = var.target_group_arn
-  }
-
-  logging = {
-    log_group_names = ["/ecs/my-app/production"]
+    log_group_names  = ["/ecs/my-app/production"]
+    ecs = {
+      cluster_arn        = var.ecs_cluster_arn
+      service_arn        = var.ecs_service_arn
+      app_container_name = "api"
+    }
   }
 
   dashboard = {
@@ -98,9 +99,10 @@ module "observability" {
   }
 
   # Optional: OpenTelemetry/Application Signals drilldowns.
-  # Existing workloads still need their own runtime instrumentation.
+  # Use mode = managed when the surrounding stack owns workload instrumentation.
   tracing = {
     enabled = true
+    mode    = "managed"
   }
 }
 ```
@@ -150,7 +152,7 @@ For service maps, distributed traces, and correlated service-level views, the ap
 
 ## Honest limitations
 
-- v1 supports one workload pattern: ECS on EC2 behind an ALB. Lambda, API Gateway, and Fargate adapters are planned for later versions.
+- v1 supports two workload attachment patterns: ECS on EC2 behind an ALB and ECS on Fargate behind an ALB. Lambda and API Gateway adapters are planned for later versions.
 - For Application Signals and service maps, the target application must install and configure the CloudWatch agent and ADOT. The package standardises the observability layer but cannot invent tracing data for arbitrary existing services it does not own.
 - For ECS and Fargate tracing, the supported collector pattern is a task sidecar. Daemon mode is intentionally out of scope for v1.
 - Cross-account observability (CloudWatch OAM) is explicitly out of scope for v1.
