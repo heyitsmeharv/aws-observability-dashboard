@@ -129,6 +129,7 @@ resource "aws_synthetics_canary" "frontend" {
   }
 
   run_config {
+    active_tracing     = var.enable_active_tracing
     timeout_in_seconds = var.timeout_seconds
     environment_variables = {
       TARGET_URL        = var.frontend_url
@@ -161,6 +162,7 @@ resource "aws_synthetics_canary" "api" {
   }
 
   run_config {
+    active_tracing     = var.enable_active_tracing
     timeout_in_seconds = var.timeout_seconds
     environment_variables = {
       TARGET_URL      = var.api_endpoint

@@ -53,3 +53,9 @@ variable "runtime_version" {
   description = "CloudWatch Synthetics runtime version for the canary."
   default     = "syn-nodejs-puppeteer-9.1"
 }
+
+variable "enable_active_tracing" {
+  type        = bool
+  description = "When true, enables active X-Ray tracing for canary runs."
+  default     = false
+}

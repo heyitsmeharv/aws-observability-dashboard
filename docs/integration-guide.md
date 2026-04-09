@@ -40,107 +40,195 @@ Fields used by specific queries:
 
 ---
 
-## Usage — ECS service adapter
+## Usage — recommended public adapter
 
 ```hcl
 module "observability" {
-  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
+  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
-  project     = "my-app"
-  environment = "production"
-  region      = "eu-west-2"
+  service = {
+    name             = "my-app"
+    environment      = "production"
+    region           = "eu-west-2"
+    kind             = "ecs_ec2_alb"
+    ecs_cluster_name = "my-cluster"
+    ecs_service_name = "my-service"
+    alb_arn          = aws_lb.main.arn
+    target_group_arn = aws_lb_target_group.main.arn
+  }
 
-  # ECS inputs
-  ecs_cluster_name = "my-cluster"
-  ecs_service_name = "my-service"
+  logging = {
+    log_group_names = ["/ecs/my-app/production"]
+  }
 
-  # ALB inputs — use .arn_suffix from your aws_lb / aws_lb_target_group resources
-  alb_arn_suffix          = aws_lb.main.arn_suffix
-  target_group_arn_suffix = aws_lb_target_group.main.arn_suffix
+  dashboard = {
+    owner       = "payments-team"
+    runbook_url = "https://internal.example/runbooks/my-app"
+  }
 
-  # Logging
-  log_group_names = ["/ecs/my-app/production"]
+  alerts = {
+    sns_topic_arn = aws_sns_topic.platform_alerts.arn
+  }
 
-  # Alarm notifications (optional)
-  create_sns_topic = true
+  canaries = {
+    enabled               = true
+    frontend_url          = "https://my-app.example.com"
+    api_endpoint          = "https://my-app.example.com/health"
+    artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
+  }
 
-  # Canaries (optional)
-  enable_canaries              = true
-  frontend_url                 = "https://my-app.example.com"
-  api_endpoint                 = "https://my-app.example.com/health"
-  canary_artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
+  tracing = {
+    enabled = true
+  }
 }
 ```
 
 ---
 
-## Variable reference
+## Onboarding an existing service
 
-### Required
+The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services.
 
-| Variable                  | Type           | Description                                               |
-|---------------------------|----------------|-----------------------------------------------------------|
-| `project`                 | string         | Project name — prefixes all resource names                |
-| `environment`             | string         | Environment name (sandbox / staging / production)         |
-| `region`                  | string         | AWS region                                                |
-| `ecs_cluster_name`        | string         | ECS cluster name                                          |
-| `ecs_service_name`        | string         | ECS service name                                          |
-| `alb_arn_suffix`          | string         | ALB `arn_suffix` attribute                                |
-| `target_group_arn_suffix` | string         | Target group `arn_suffix` attribute                       |
-| `log_group_names`         | list(string)   | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry. |
+In v1, that means:
 
-### Optional
+- A CloudWatch dashboard for the service
+- CloudWatch alarms for ALB, ECS, and optional canary signals
+- Logs Insights saved queries for the supplied log groups
+- Optional Synthetics canaries for outside-in checks
 
-| Variable                       | Default           | Description                                               |
-|--------------------------------|-------------------|-----------------------------------------------------------|
-| `sns_topic_arn`                | null              | Existing SNS topic ARN for alarm notifications            |
-| `create_sns_topic`             | false             | Create a new SNS topic                                    |
-| `alb_5xx_threshold`            | 10                | ALB 5xx count threshold per period                        |
-| `alb_latency_p99_threshold_seconds` | 2           | ALB P99 latency threshold in seconds                      |
-| `ecs_cpu_threshold_percent`    | 80                | ECS CPU % threshold                                       |
-| `ecs_memory_threshold_percent` | 80                | ECS memory % threshold                                    |
-| `enable_canaries`              | false             | Provision Synthetics canaries                             |
-| `frontend_url`                 | null              | Frontend URL for health-check canary                      |
-| `api_endpoint`                 | null              | API URL for API canary (omit to skip)                     |
-| `canary_artifacts_bucket_name` | null              | S3 bucket for canary artifacts                            |
-| `canary_schedule_expression`   | "rate(5 minutes)" | Canary run schedule                                       |
+If you also have a separate internal UI or demo dashboard, treat that as a consumer of the observability signals, not as a required dependency for onboarding.
+
+---
+
+## Contract overview
+
+### `service` (required)
+
+| Field                  | Type   | Description |
+|------------------------|--------|-------------|
+| `name`                 | string | Service/project name used in resource naming |
+| `environment`          | string | Environment name such as `sandbox`, `staging`, or `production` |
+| `region`               | string | AWS region |
+| `kind`                 | string | Workload shape. v1 supports `ecs_ec2_alb` |
+| `ecs_cluster_name`     | string | ECS cluster name |
+| `ecs_service_name`     | string | ECS service name |
+| `alb_arn`              | string | Full ALB ARN |
+| `target_group_arn`     | string | Full target group ARN |
+
+### `logging` (required)
+
+| Field             | Type         | Description |
+|-------------------|--------------|-------------|
+| `log_group_names` | list(string) | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry |
+| `fields`          | object       | Optional field mappings when your logs do not use the default names |
+
+Default log field mappings:
+
+| Logical field | Default log field |
+|---------------|-------------------|
+| `level`       | `level` |
+| `route`       | `route` |
+| `method`      | `method` |
+| `status_code` | `statusCode` |
+| `latency_ms`  | `durationMs` |
+| `request_id`  | `requestId` |
+| `source_ip`   | `sourceIp` |
+
+### `dashboard` (optional)
+
+| Field         | Default | Description |
+|---------------|---------|-------------|
+| `owner`       | null    | Team/owner label shown in the dashboard header |
+| `runbook_url` | null    | Runbook URL linked from the dashboard quick links |
+
+### `alerts` (optional)
+
+| Field                               | Default           | Description |
+|-------------------------------------|-------------------|-------------|
+| `sns_topic_arn`                     | null              | Existing SNS topic ARN for alarm notifications |
+| `create_sns_topic`                  | false             | Create a new SNS topic if no ARN is supplied |
+| `alb_5xx_threshold`                 | 10                | ALB 5xx count threshold per period |
+| `alb_latency_p99_threshold_seconds` | 2                 | ALB P99 latency threshold in seconds |
+| `ecs_cpu_threshold_percent`         | 80                | ECS CPU percentage threshold |
+| `ecs_memory_threshold_percent`      | 80                | ECS memory percentage threshold |
+
+### `canaries` (optional)
+
+| Field                   | Default           | Description |
+|-------------------------|-------------------|-------------|
+| `enabled`               | false             | Provision Synthetics canaries |
+| `frontend_url`          | null              | Frontend URL for the browser canary |
+| `api_endpoint`          | null              | API health URL for the API canary |
+| `artifacts_bucket_name` | null              | S3 bucket for canary artifacts |
+| `schedule_expression`   | "rate(5 minutes)" | Canary run schedule |
+
+### `tracing` (optional)
+
+| Field                   | Default        | Description |
+|-------------------------|----------------|-------------|
+| `enabled`               | false          | Adds X-Ray drilldowns to the dashboard and outputs |
+| `service_name`          | `service.name` | Trace service name used for X-Ray filtering and labels |
+| `enable_canary_tracing` | `enabled`      | Enables active X-Ray tracing for CloudWatch Synthetics canaries |
 
 ---
 
 ## Outputs
 
+The primary operator surface created by the package is the CloudWatch dashboard exposed through `dashboard_name`, `dashboard_arn`, and `dashboard_url`.
+
 ```hcl
-# Dashboard — open directly in the CloudWatch console
+# Dashboard identity
 module.observability.dashboard_name
-# => "my-app-production"
-
-# Dashboard ARN
 module.observability.dashboard_arn
+module.observability.dashboard_url
 
-# Alarm ARNs — reference in other modules or EventBridge rules
+# Tracing drilldown
+module.observability.tracing_service_name
+module.observability.xray_trace_map_url
+module.observability.xray_traces_url
+
+# Alarm references
 module.observability.alarm_arns
+module.observability.alarm_names
 
-# Logs Insights saved queries
+# Logs drilldown
 module.observability.query_definition_ids
+module.observability.logs_insights_url
+module.observability.alarms_url
 
-# Canary names
+# Synthetic monitoring
 module.observability.frontend_canary_name
 module.observability.api_canary_name
 ```
 
 ---
 
-## ALB ARN suffix — finding the right value
+## Logging field mappings
 
-The CloudWatch ALB metrics use the `arn_suffix` rather than the full ARN. In Terraform:
+If your service logs use different field names, you can override them without rewriting the built-in queries or dashboard widgets:
 
 ```hcl
-resource "aws_lb" "main" { ... }
-
-# Use this in the adapter:
-alb_arn_suffix = aws_lb.main.arn_suffix
-# Example value: "app/my-app-production-alb/1234567890abcdef"
+logging = {
+  log_group_names = ["/ecs/my-app/production"]
+  fields = {
+    status_code = "httpStatus"
+    latency_ms  = "latencyMs"
+    source_ip   = "clientIp"
+  }
+}
 ```
+
+---
+
+## Lower-level adapter
+
+If you need direct control over the lower-level CloudWatch wiring, the `ecs_service` adapter is still available at:
+
+```hcl
+source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
+```
+
+That adapter exposes ALB and target group ARN suffixes directly and is intended for advanced consumers. The recommended public entry point is `platform_service`.
 
 ---
 

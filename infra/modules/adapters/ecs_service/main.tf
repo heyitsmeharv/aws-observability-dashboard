@@ -10,6 +10,8 @@ locals {
 
   # Canary name is known deterministically once resources exist
   frontend_canary_name = var.enable_canaries ? module.canaries[0].frontend_canary_name : null
+
+  resolved_tracing_service_name = coalesce(var.tracing_service_name, var.project)
 }
 
 # ── Optional SNS topic ────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ module "canaries" {
   frontend_url          = var.frontend_url
   api_endpoint          = var.api_endpoint
   schedule_expression   = var.canary_schedule_expression
+  enable_active_tracing = var.enable_canary_active_tracing
 }
 
 # ── Core: alarms ──────────────────────────────────────────────────────────────
@@ -72,6 +75,7 @@ module "logs_insights" {
   project         = var.project
   environment     = var.environment
   log_group_names = var.log_group_names
+  log_field_names = var.log_field_names
 }
 
 # ── Core: dashboards ──────────────────────────────────────────────────────────
@@ -88,9 +92,14 @@ module "dashboards" {
   ecs_cluster_name        = var.ecs_cluster_name
   ecs_service_name        = var.ecs_service_name
   log_group_names         = var.log_group_names
+  service_owner           = var.dashboard_owner
+  runbook_url             = var.runbook_url
+  tracing_enabled         = var.tracing_enabled
+  tracing_service_name    = local.resolved_tracing_service_name
 
-  canary_name = local.frontend_canary_name
-  alarm_arns  = module.alarms.alarm_arns
+  canary_name     = local.frontend_canary_name
+  alarm_arns      = module.alarms.alarm_arns
+  log_field_names = var.log_field_names
 
   depends_on = [module.alarms]
 }

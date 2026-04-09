@@ -13,7 +13,9 @@ Point it at your ECS service and ALB, and it generates the core observability pa
 - **10 Logs Insights saved queries** — error analysis, latency, traffic, and deploy-window helpers
 - **CloudWatch Synthetics canaries** — outside-in endpoint monitoring (optional)
 
-The product is the Terraform module set. The `examples/react-node-demo` app is a realistic ECS target used to prove the package works end to end.
+The product is the Terraform module set. The dashboard created by the module is a CloudWatch dashboard backed by CloudWatch metrics, alarms, Logs Insights queries, and optional canaries.
+
+The `examples/react-node-demo` app is a realistic ECS target used to prove the package works end to end. Its separate React UI is a companion demo and validation surface, not a required part of the package contract.
 
 ---
 
@@ -37,7 +39,8 @@ infra/modules/
 ├── core_dashboards/        Single CloudWatch dashboard with overview/service/ops/log sections
 ├── core_logs_insights/     10 saved Logs Insights query definitions
 └── adapters/
-    └── ecs_service/        Wires all core modules for an ECS+ALB workload
+    ├── platform_service/   Recommended public adapter for platform teams
+    └── ecs_service/        Lower-level ECS+ALB adapter used by platform_service
 
 examples/
 └── react-node-demo/
@@ -62,35 +65,56 @@ infra/                      Repo-level Terraform boilerplate (state bootstrap, C
 
 ```hcl
 module "observability" {
-  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/ecs_service"
+  source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
-  project     = "my-app"
-  environment = "production"
-  region      = "eu-west-2"
+  service = {
+    name             = "my-app"
+    environment      = "production"
+    region           = "eu-west-2"
+    kind             = "ecs_ec2_alb"
+    ecs_cluster_name = "my-cluster"
+    ecs_service_name = "my-service"
+    alb_arn          = aws_lb.main.arn
+    target_group_arn = aws_lb_target_group.main.arn
+  }
 
-  ecs_cluster_name        = "my-cluster"
-  ecs_service_name        = "my-service"
-  alb_arn_suffix          = aws_lb.main.arn_suffix
-  target_group_arn_suffix = aws_lb_target_group.main.arn_suffix
-  log_group_names         = ["/ecs/my-app/production"]
+  logging = {
+    log_group_names = ["/ecs/my-app/production"]
+  }
 
-  create_sns_topic = true
+  dashboard = {
+    owner = "payments-team"
+  }
+
+  alerts = {
+    sns_topic_arn = aws_sns_topic.platform_alerts.arn
+  }
 
   # Optional: outside-in synthetic monitoring
-  enable_canaries              = true
-  frontend_url                 = "https://my-app.example.com"
-  api_endpoint                 = "https://my-app.example.com/health"
-  canary_artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
+  canaries = {
+    enabled               = true
+    frontend_url          = "https://my-app.example.com"
+    api_endpoint          = "https://my-app.example.com/health"
+    artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
+  }
+
+  # Optional: X-Ray drilldowns and canary active tracing.
+  # The workload still needs external tracing instrumentation.
+  tracing = {
+    enabled = true
+  }
 }
 ```
 
-See [docs/integration-guide.md](docs/integration-guide.md) for the full variable reference, output contract, and structured logging requirements.
+See [docs/integration-guide.md](docs/integration-guide.md) for the full contract, outputs, onboarding guidance for existing services, log field mapping support, and the lower-level `ecs_service` adapter.
 
 ---
 
 ## Running the demo
 
 The `examples/react-node-demo` directory deploys a complete ECS stack — React frontend, Node API, ALB — and wires the observability package against it.
+
+Use this demo when you want a realistic workload plus a separate UI that helps generate traffic and validate the package behaviour. It is a companion test harness for the module, not a runtime dependency for consumers.
 
 See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for step-by-step instructions.
 
@@ -119,7 +143,7 @@ Dashboards, alarms, Logs Insights, and canaries around existing AWS resources. T
 
 ### Level 2 — Application Signals (requires app instrumentation)
 
-For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package cannot generate trace data if the application emits none.
+For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module now exposes X-Ray drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none.
 
 ---
 

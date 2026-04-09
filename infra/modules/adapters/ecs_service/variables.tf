@@ -76,6 +76,75 @@ variable "log_group_names" {
   }
 }
 
+variable "log_field_names" {
+  type = object({
+    level       = string
+    route       = string
+    method      = string
+    status_code = string
+    latency_ms  = string
+    request_id  = string
+    source_ip   = string
+  })
+  description = "Mapping of logical HTTP log fields to the actual field names present in CloudWatch Logs."
+  default = {
+    level       = "level"
+    route       = "route"
+    method      = "method"
+    status_code = "statusCode"
+    latency_ms  = "durationMs"
+    request_id  = "requestId"
+    source_ip   = "sourceIp"
+  }
+
+  validation {
+    condition = alltrue([
+      for field_name in values(var.log_field_names) :
+      can(regex("^[A-Za-z_][A-Za-z0-9_]*$", field_name))
+    ])
+    error_message = "log_field_names values must be simple Logs Insights field identifiers such as route or statusCode."
+  }
+}
+
+variable "dashboard_owner" {
+  type        = string
+  description = "Optional owner/team label rendered in the dashboard header."
+  default     = null
+
+  validation {
+    condition     = var.dashboard_owner == null || length(trimspace(var.dashboard_owner)) > 0
+    error_message = "dashboard_owner must be null or a non-empty string."
+  }
+}
+
+variable "runbook_url" {
+  type        = string
+  description = "Optional runbook URL linked from the dashboard."
+  default     = null
+
+  validation {
+    condition     = var.runbook_url == null || can(regex("^https?://", var.runbook_url))
+    error_message = "runbook_url must be null or a fully-qualified http(s) URL."
+  }
+}
+
+variable "tracing_enabled" {
+  type        = bool
+  description = "When true, adds X-Ray tracing drilldowns to outputs and the CloudWatch dashboard."
+  default     = false
+}
+
+variable "tracing_service_name" {
+  type        = string
+  description = "Tracing service name used for X-Ray/Application Signals drilldowns."
+  default     = null
+
+  validation {
+    condition     = var.tracing_service_name == null || length(trimspace(var.tracing_service_name)) > 0
+    error_message = "tracing_service_name must be null or a non-empty string."
+  }
+}
+
 # ── Alarm configuration ───────────────────────────────────────────────────────
 
 variable "sns_topic_arn" {
@@ -189,4 +258,10 @@ variable "canary_schedule_expression" {
     condition     = can(regex("^(rate|cron)\\(", var.canary_schedule_expression))
     error_message = "canary_schedule_expression must start with rate( or cron(."
   }
+}
+
+variable "enable_canary_active_tracing" {
+  type        = bool
+  description = "When true, enables active X-Ray tracing for CloudWatch Synthetics canaries."
+  default     = false
 }
