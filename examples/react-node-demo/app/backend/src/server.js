@@ -124,17 +124,20 @@ app.use((req, res, next) => {
 
   res.end = function (...args) {
     const durationMs = Date.now() - req.startTime;
-    log("info", "request completed", {
-      requestId: req.requestId,
-      method: req.method,
-      route: req.path,
-      statusCode: res.statusCode,
-      durationMs,
-      sourceIp: req.ip ?? req.headers["x-forwarded-for"] ?? "unknown",
-      userAgent: req.headers["user-agent"] ?? "",
-    });
-    // Record in metrics store (skip the metrics endpoint itself)
-    if (req.path !== "/api/metrics") {
+    // Keep internal dependency simulator traffic out of the demo metrics/log widgets.
+    if (!req.path.startsWith("/internal/")) {
+      log("info", "request completed", {
+        requestId: req.requestId,
+        method: req.method,
+        route: req.path,
+        statusCode: res.statusCode,
+        durationMs,
+        sourceIp: req.ip ?? req.headers["x-forwarded-for"] ?? "unknown",
+        userAgent: req.headers["user-agent"] ?? "",
+      });
+    }
+    // Record in metrics store (skip internal routes and the metrics endpoint itself)
+    if (!req.path.startsWith("/internal/") && req.path !== "/api/metrics") {
       metricsStore.record(req.path, res.statusCode, durationMs);
     }
     return originalEnd(...args);
@@ -187,15 +190,44 @@ app.get("/api/fail", (req, res) => {
   });
 });
 
-// Dependency simulation — sometimes times out, sometimes succeeds
-// Demonstrates dependency-related latency patterns in Logs Insights
+// Private downstream simulator used to generate a real outbound HTTP span for
+// the tracing demo without relying on external network dependencies.
+app.get("/internal/downstream", async (req, res) => {
+  const latencyMs = parseInt(req.query.latencyMs ?? "500", 10);
+  const clamped = Math.min(Math.max(latencyMs, 50), 10_000);
+
+  await new Promise((resolve) => setTimeout(resolve, clamped));
+
+  if ((req.query.mode ?? "ok") === "fail") {
+    return res.status(503).json({
+      error: "DependencyUnavailable",
+      message: "Simulated downstream dependency failure.",
+      latencyMs: clamped,
+    });
+  }
+
+  res.json({
+    message: "Simulated downstream dependency succeeded.",
+    latencyMs: clamped,
+    data: { id: randomUUID(), value: Math.random() * 100 },
+  });
+});
+
+// Dependency simulation — sometimes fails, sometimes succeeds.
+// Uses a real internal HTTP request so OpenTelemetry can emit a client span.
 app.get("/api/dependency", async (req, res) => {
   const failRate = parseFloat(req.query.failRate ?? "0.3");
   const latencyMs = parseInt(req.query.latencyMs ?? "500", 10);
+  const shouldFail = Math.random() < failRate;
+  const internalUrl = new URL(`http://127.0.0.1:${PORT}/internal/downstream`);
 
-  await new Promise((resolve) => setTimeout(resolve, latencyMs));
+  internalUrl.searchParams.set("latencyMs", String(latencyMs));
+  internalUrl.searchParams.set("mode", shouldFail ? "fail" : "ok");
 
-  if (Math.random() < failRate) {
+  const response = await fetch(internalUrl);
+  const payload = await response.json();
+
+  if (!response.ok) {
     log("error", "downstream dependency unavailable", {
       route: "/api/dependency",
       dependency: "downstream-service",
@@ -204,15 +236,15 @@ app.get("/api/dependency", async (req, res) => {
 
     return res.status(503).json({
       error: "ServiceUnavailable",
-      message: "Downstream dependency did not respond in time.",
+      message: payload.message ?? "Downstream dependency did not respond in time.",
       requestId: req.requestId,
     });
   }
 
   res.json({
-    message: "Dependency call succeeded.",
+    message: payload.message ?? "Dependency call succeeded.",
     latencyMs,
-    data: { id: randomUUID(), value: Math.random() * 100 },
+    data: payload.data ?? { id: randomUUID(), value: Math.random() * 100 },
   });
 });
 
