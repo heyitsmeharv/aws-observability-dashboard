@@ -59,6 +59,7 @@ locals {
     { name = "OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT", value = "http://localhost:4316/v1/metrics" },
     { name = "OTEL_TRACES_SAMPLER", value = "xray" },
     { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://localhost:2000" },
+    { name = "OTEL_PROPAGATORS", value = "tracecontext,baggage,b3,xray" },
     { name = "NODE_OPTIONS", value = "--import @aws/aws-distro-opentelemetry-node-autoinstrumentation/register --experimental-loader=@opentelemetry/instrumentation/hook.mjs" },
   ] : [])
 
@@ -119,6 +120,21 @@ locals {
 }
 
 data "aws_caller_identity" "current" {}
+
+resource "aws_cloudformation_stack" "application_signals_discovery" {
+  count = var.enable_tracing ? 1 : 0
+
+  name = "${local.name_prefix}-appsignals-discovery"
+
+  template_body = <<-YAML
+    AWSTemplateFormatVersion: "2010-09-09"
+    Resources:
+      Discovery:
+        Type: AWS::ApplicationSignals::Discovery
+  YAML
+
+  tags = local.common_tags
+}
 
 # ── Default VPC lookup (skipped if vpc_id is provided) ───────────────────────
 
@@ -783,6 +799,7 @@ resource "aws_ecs_service" "backend" {
   }
 
   depends_on = [
+    aws_cloudformation_stack.application_signals_discovery,
     aws_lb_listener.http,
     aws_iam_role_policy_attachment.task_execution,
     aws_iam_role_policy_attachment.backend_task_cloudwatch_agent,
