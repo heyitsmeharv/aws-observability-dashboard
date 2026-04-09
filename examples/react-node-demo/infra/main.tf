@@ -593,6 +593,13 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy_attachment" "task_execution_cloudwatch_agent" {
+  count = var.enable_tracing ? 1 : 0
+
+  role       = aws_iam_role.task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 resource "aws_iam_role_policy_attachment" "backend_task_cloudwatch_agent" {
   count = var.enable_tracing ? 1 : 0
 
@@ -807,6 +814,7 @@ resource "aws_ecs_service" "backend" {
     aws_cloudformation_stack.application_signals_discovery,
     aws_lb_listener.http,
     aws_iam_role_policy_attachment.task_execution,
+    aws_iam_role_policy_attachment.task_execution_cloudwatch_agent,
     aws_iam_role_policy_attachment.backend_task_cloudwatch_agent,
     aws_vpc_endpoint.cloudwatch_monitoring,
     aws_vpc_endpoint.xray,
