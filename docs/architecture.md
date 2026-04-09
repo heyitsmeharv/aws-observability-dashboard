@@ -78,15 +78,14 @@ CloudWatch Synthetics Canaries ─────────────► CloudW
 
 ## Public vs internal surface
 
-`platform_service` is the recommended public contract. It presents the package as:
+`platform_service` is the recommended public contract. It presents the package as one module call that attaches to an existing service using AWS resource ARNs and log-group inputs:
 
 - `service` — workload identity plus ECS/ALB attachment points
 - `logging` — log groups plus optional field mappings
 - `dashboard` — owner and runbook metadata for the operator home page
 - `alerts` — thresholds and notification routing
 - `canaries` — optional outside-in probes
-
-- `tracing` - optional X-Ray drilldowns plus canary active tracing
+- `tracing` — optional OpenTelemetry/Application Signals drilldowns plus canary active tracing
 
 The `core_*` modules are internal building blocks. The lower-level `ecs_service` adapter remains available for advanced consumers, but platform teams should integrate through `platform_service` so the package can evolve without forcing them to think in CloudWatch-specific suffixes and widget wiring.
 
@@ -101,7 +100,7 @@ The package itself creates CloudWatch resources:
 - Logs Insights saved queries
 - Optional Synthetics canaries
 
-It also exposes tracing drilldowns into X-Ray when you enable the `tracing` block, and it can turn on active X-Ray tracing for canaries. It does not instrument the target ECS workload for you or provision a separate bespoke operator UI. If you want a richer custom frontend for demos or internal validation, that UI should sit alongside the package and read from the signals the package creates.
+It also exposes tracing drilldowns when you enable the `tracing` block, and it can turn on active tracing for canaries. For arbitrary existing ECS workloads, it does not instrument the target application for you or provision a separate bespoke operator UI. The demo stack is the exception because it owns the ECS task definition and host fleet, so it can wire a CloudWatch agent daemon plus Node.js OpenTelemetry auto-instrumentation. If you want a richer custom frontend for demos or internal validation, that UI should sit alongside the package and read from the signals the package creates.
 
 The `examples/react-node-demo` frontend is one example of that companion layer. It is useful for testing and showcasing the module, but teams onboarding the package to an existing AWS account do not need to deploy it.
 
@@ -121,7 +120,7 @@ For service maps, distributed traces, and correlated service-level views, the ta
 2. Configuring the ADOT collector for the application
 3. Instrumenting the application code with OpenTelemetry
 
-This package cannot generate trace data if the application emits none. Level 2 is explicitly optional for v1, and the package currently helps with trace drilldown rather than managed application instrumentation.
+This package cannot generate trace data if the application emits none. Level 2 is explicitly optional for v1, and the package currently helps with trace drilldown rather than managed application instrumentation for arbitrary existing services.
 
 ---
 

@@ -1,7 +1,7 @@
 const W = 980;
 const H = 420;
-const NODE_W = 150;
-const NODE_H = 64;
+const NODE_W = 164;
+const NODE_H = 72;
 const ICON_SIZE = 30;
 
 const COLORS = {
@@ -103,12 +103,12 @@ const NODES = {
     monitored: true,
     tag: "pkg",
   },
-  xray: {
+  otel: {
     x: 712,
     y: 320,
-    label: "X-Ray",
-    sublabel: "Trace drilldown",
-    icon: "xray",
+    label: "OpenTelemetry",
+    sublabel: "Application Signals",
+    icon: "otel",
     tone: COLORS.trace,
     monitored: true,
     tag: "opt",
@@ -147,7 +147,7 @@ const EDGES = [
   { id: "e-al-da", d: curvePath("alb", "bottom", "dashboard", "top", 0, 68, 0, -54) },
   { id: "e-be-lo", d: curvePath("backend", "bottom", "logs", "top", 0, 68, 0, -54) },
   { id: "e-lo-da", d: linePath("logs", "left", "dashboard", "right") },
-  { id: "e-be-xr", d: curvePath("backend", "bottom", "xray", "top", 38, 88, 0, -56) },
+  { id: "e-be-ot", d: curvePath("backend", "bottom", "otel", "top", 38, 88, 0, -56) },
 ];
 
 function edgeById(id) {
@@ -194,7 +194,7 @@ function nodeVisual(id, flight, metrics) {
     if (alarms === "warn") return { fill: "#1f180d", stroke: COLORS.warn, textColor: COLORS.text, glow: "url(#glow-md)", badge: "watching" };
   }
 
-  if (id === "xray" && (signals.tracesHot || flight?.endpointId === "dependency")) {
+  if (id === "otel" && (signals.tracesHot || flight?.endpointId === "dependency")) {
     return { fill: "#1d1431", stroke: COLORS.trace, textColor: COLORS.text, glow: "url(#glow-md)", badge: "active" };
   }
 
@@ -300,7 +300,7 @@ function edgeVisual(id, flight, metrics) {
     };
   }
 
-  if (id === "e-be-xr" && (signals.tracesHot || flight?.endpointId === "dependency")) {
+  if (id === "e-be-ot" && (signals.tracesHot || flight?.endpointId === "dependency")) {
     return {
       stroke: COLORS.trace,
       strokeWidth: 2.2,
@@ -408,7 +408,7 @@ function ServiceTile({ kind, x, y, tone }) {
         </>
       )}
 
-      {kind === "xray" && (
+      {kind === "otel" && (
         <>
           <circle cx="8" cy="10" r="2" fill={stroke} />
           <circle cx="21" cy="9" r="2" fill={stroke} />
@@ -471,8 +471,9 @@ function PacketDot({ flight }) {
 function NodeCard({ id, node, flight, metrics }) {
   const visual = nodeVisual(id, flight, metrics);
   const iconX = node.x + 12;
-  const iconY = node.y + 17;
-  const labelX = node.x + 54;
+  const iconY = node.y + Math.round((NODE_H - ICON_SIZE) / 2);
+  const labelX = node.x + 56;
+  const labelFontSize = node.label.length > 12 ? 11 : 12;
 
   return (
     <g>
@@ -525,9 +526,9 @@ function NodeCard({ id, node, flight, metrics }) {
 
       <text
         x={labelX}
-        y={node.y + 31}
+        y={node.y + 33}
         fill={visual.textColor}
-        fontSize="12"
+        fontSize={labelFontSize}
         fontWeight="700"
         fontFamily="system-ui, sans-serif"
       >
@@ -536,7 +537,7 @@ function NodeCard({ id, node, flight, metrics }) {
 
       <text
         x={labelX}
-        y={node.y + 46}
+        y={node.y + 51}
         fill="#8b949e"
         fontSize="10"
         fontFamily="system-ui, sans-serif"
@@ -619,7 +620,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
     dashboard: signals.dashboardHot,
     alarms: alarms !== "idle",
     canary: true,
-    xray: signals.tracesHot || flight?.endpointId === "dependency",
+    otel: signals.tracesHot || flight?.endpointId === "dependency",
     downstream: flight?.endpointId === "dependency" && Boolean(flight?.phase),
   };
 
@@ -631,7 +632,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
     dashboard: COLORS.dashboard,
     alarms: alarms === "alert" ? COLORS.danger : alarms === "warn" ? COLORS.warn : NODES.alarms.tone,
     canary: COLORS.canary,
-    xray: COLORS.trace,
+    otel: COLORS.trace,
     downstream: COLORS.traffic,
   };
 
@@ -746,7 +747,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
           Solid = request flow | Dashed = monitoring flow | PKG = provisioned by the module | OPT = optional feature
         </text>
         <text x={W - 12} y={H - 10} textAnchor="end" fill="#6e7681" fontSize="10" fontFamily="system-ui, sans-serif">
-          Dashboard | Alarms | Logs Insights | Synthetics | X-Ray
+          Dashboard | Alarms | Logs Insights | Synthetics | OpenTelemetry
         </text>
       </svg>
     </div>

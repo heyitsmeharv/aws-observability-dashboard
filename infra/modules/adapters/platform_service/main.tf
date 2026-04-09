@@ -1,6 +1,20 @@
 locals {
   service_kind = coalesce(try(var.service.kind, null), "ecs_ec2_alb")
 
+  ecs_service_arn = try(var.service.ecs_service_arn, null)
+
+  ecs_service_arn_parts = local.ecs_service_arn != null ? split("/", local.ecs_service_arn) : []
+
+  ecs_cluster_name = coalesce(
+    try(var.service.ecs_cluster_name, null),
+    length(local.ecs_service_arn_parts) >= 3 ? local.ecs_service_arn_parts[length(local.ecs_service_arn_parts) - 2] : null
+  )
+
+  ecs_service_name = coalesce(
+    try(var.service.ecs_service_name, null),
+    length(local.ecs_service_arn_parts) >= 2 ? local.ecs_service_arn_parts[length(local.ecs_service_arn_parts) - 1] : null
+  )
+
   dashboard = {
     owner       = try(var.dashboard.owner, null)
     runbook_url = try(var.dashboard.runbook_url, null)
@@ -64,6 +78,21 @@ resource "terraform_data" "validate" {
     }
 
     precondition {
+      condition     = local.ecs_service_arn == null || can(regex("^arn:[^:]+:ecs:[^:]+:[0-9]{12}:service/.+$", local.ecs_service_arn))
+      error_message = "service.ecs_service_arn must be a valid ECS service ARN."
+    }
+
+    precondition {
+      condition     = local.ecs_cluster_name != null && length(trimspace(local.ecs_cluster_name)) > 0
+      error_message = "service.ecs_cluster_name could not be resolved. Provide service.ecs_service_arn or service.ecs_cluster_name."
+    }
+
+    precondition {
+      condition     = local.ecs_service_name != null && length(trimspace(local.ecs_service_name)) > 0
+      error_message = "service.ecs_service_name could not be resolved. Provide service.ecs_service_arn or service.ecs_service_name."
+    }
+
+    precondition {
       condition = alltrue([
         for field_name in values(local.log_field_names) :
         can(regex("^[A-Za-z_][A-Za-z0-9_]*$", field_name))
@@ -105,8 +134,8 @@ module "observability" {
   environment = var.service.environment
   region      = var.service.region
 
-  ecs_cluster_name        = var.service.ecs_cluster_name
-  ecs_service_name        = var.service.ecs_service_name
+  ecs_cluster_name        = local.ecs_cluster_name
+  ecs_service_name        = local.ecs_service_name
   alb_arn_suffix          = local.alb_arn_suffix
   target_group_arn_suffix = local.target_group_arn_suffix
 

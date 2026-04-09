@@ -40,6 +40,12 @@ variable "demo_enable_canaries" {
   default     = false
 }
 
+variable "demo_enable_tracing" {
+  type        = bool
+  description = "Enable OpenTelemetry/Application Signals for the demo backend."
+  default     = true
+}
+
 variable "demo_create_sns_topic" {
   type        = bool
   description = "Create an SNS topic for demo alarm notifications."

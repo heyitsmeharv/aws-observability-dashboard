@@ -4,8 +4,9 @@ variable "service" {
     environment      = string
     region           = string
     kind             = optional(string)
-    ecs_cluster_name = string
-    ecs_service_name = string
+    ecs_service_arn  = optional(string)
+    ecs_cluster_name = optional(string)
+    ecs_service_name = optional(string)
     alb_arn          = string
     target_group_arn = string
   })
@@ -27,13 +28,13 @@ variable "service" {
   }
 
   validation {
-    condition     = length(trimspace(var.service.ecs_cluster_name)) > 0
-    error_message = "service.ecs_cluster_name must be a non-empty ECS cluster name."
-  }
-
-  validation {
-    condition     = length(trimspace(var.service.ecs_service_name)) > 0
-    error_message = "service.ecs_service_name must be a non-empty ECS service name."
+    condition = (
+      length(trimspace(var.service.ecs_service_arn != null ? var.service.ecs_service_arn : "")) > 0
+      ) || (
+      length(trimspace(var.service.ecs_cluster_name != null ? var.service.ecs_cluster_name : "")) > 0 &&
+      length(trimspace(var.service.ecs_service_name != null ? var.service.ecs_service_name : "")) > 0
+    )
+    error_message = "Provide either service.ecs_service_arn or both service.ecs_cluster_name and service.ecs_service_name."
   }
 }
 
@@ -98,6 +99,6 @@ variable "tracing" {
     service_name          = optional(string)
     enable_canary_tracing = optional(bool)
   })
-  description = "Optional tracing metadata for X-Ray/Application Signals. The workload must still be instrumented outside this module."
+  description = "Optional OpenTelemetry/Application Signals metadata. The workload must still be instrumented outside this module."
   default     = {}
 }

@@ -47,14 +47,13 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name             = "my-app"
-    environment      = "production"
-    region           = "eu-west-2"
-    kind             = "ecs_ec2_alb"
-    ecs_cluster_name = "my-cluster"
-    ecs_service_name = "my-service"
-    alb_arn          = aws_lb.main.arn
-    target_group_arn = aws_lb_target_group.main.arn
+    name            = "my-app"
+    environment     = "production"
+    region          = "eu-west-2"
+    kind            = "ecs_ec2_alb"
+    ecs_service_arn = var.ecs_service_arn
+    alb_arn         = var.alb_arn
+    target_group_arn = var.target_group_arn
   }
 
   logging = {
@@ -87,7 +86,7 @@ module "observability" {
 
 ## Onboarding an existing service
 
-The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services.
+The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services. The recommended public contract is ARN-first: pass the ECS service ARN, ALB ARN, target group ARN, and log groups, and let the module derive the CloudWatch dimensions internally.
 
 In v1, that means:
 
@@ -110,10 +109,13 @@ If you also have a separate internal UI or demo dashboard, treat that as a consu
 | `environment`          | string | Environment name such as `sandbox`, `staging`, or `production` |
 | `region`               | string | AWS region |
 | `kind`                 | string | Workload shape. v1 supports `ecs_ec2_alb` |
-| `ecs_cluster_name`     | string | ECS cluster name |
-| `ecs_service_name`     | string | ECS service name |
+| `ecs_service_arn`      | string | Recommended public attachment point. The module derives cluster and service names from this ARN |
+| `ecs_cluster_name`     | string | Optional compatibility input when you are not passing `ecs_service_arn` |
+| `ecs_service_name`     | string | Optional compatibility input when you are not passing `ecs_service_arn` |
 | `alb_arn`              | string | Full ALB ARN |
 | `target_group_arn`     | string | Full target group ARN |
+
+Provide either `ecs_service_arn` or both `ecs_cluster_name` and `ecs_service_name`.
 
 ### `logging` (required)
 
@@ -166,9 +168,11 @@ Default log field mappings:
 
 | Field                   | Default        | Description |
 |-------------------------|----------------|-------------|
-| `enabled`               | false          | Adds X-Ray drilldowns to the dashboard and outputs |
-| `service_name`          | `service.name` | Trace service name used for X-Ray filtering and labels |
-| `enable_canary_tracing` | `enabled`      | Enables active X-Ray tracing for CloudWatch Synthetics canaries |
+| `enabled`               | false          | Adds Application Signals / trace drilldowns to the dashboard and outputs |
+| `service_name`          | `service.name` | Trace service name used for filtering and labels |
+| `enable_canary_tracing` | `enabled`      | Enables active tracing for CloudWatch Synthetics canaries |
+
+The reusable module only publishes tracing links and optional canary tracing. The monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent daemon plus Node.js ESM auto-instrumentation.
 
 ---
 
@@ -276,4 +280,4 @@ log("info", "request completed", {
 
 ## Application Signals (Level 2 — optional)
 
-For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically — it requires manual instrumentation of the target application and a CloudWatch agent daemon task.
+For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically for arbitrary existing services — it requires manual instrumentation of the target application and a CloudWatch agent daemon task or equivalent collector setup.

@@ -52,13 +52,13 @@ variable "runbook_url" {
 
 variable "tracing_enabled" {
   type        = bool
-  description = "When true, renders X-Ray tracing drilldowns in the dashboard."
+  description = "When true, renders trace drilldowns in the dashboard."
   default     = false
 }
 
 variable "tracing_service_name" {
   type        = string
-  description = "Tracing service name used for X-Ray drilldowns."
+  description = "Tracing service name used for trace drilldowns."
   default     = null
 }
 

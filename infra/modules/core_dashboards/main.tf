@@ -35,8 +35,8 @@ locals {
     "- [ECS service console](https://console.aws.amazon.com/ecs/v2/clusters/${var.ecs_cluster_name}/services/${var.ecs_service_name})",
     "- [Logs Insights](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#logsV2:logs-insights)",
     "- [CloudWatch Alarms](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#alarmsV2:)",
-    var.tracing_enabled ? "- [X-Ray trace map](${local.xray_trace_map_url})" : null,
-    var.tracing_enabled ? "- [X-Ray traces for ${local.resolved_tracing_service_name}](${local.xray_traces_url})" : null,
+    var.tracing_enabled ? "- [Trace map](${local.xray_trace_map_url})" : null,
+    var.tracing_enabled ? "- [Traces for ${local.resolved_tracing_service_name}](${local.xray_traces_url})" : null,
     var.runbook_url != null ? "- [Runbook](${var.runbook_url})" : null,
   ])
 
