@@ -780,7 +780,12 @@ resource "aws_ecs_service" "backend" {
   cluster         = aws_ecs_cluster.demo.id
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = 1
-  tags            = local.common_tags
+  # The sandbox runs on a small EC2-backed ECS cluster. When we roll a new
+  # awsvpc task revision there may not be spare ENI capacity for old and new
+  # tasks simultaneously, so drain first, then start the replacement.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+  tags                               = local.common_tags
 
   capacity_provider_strategy {
     capacity_provider = aws_ecs_capacity_provider.demo.name
