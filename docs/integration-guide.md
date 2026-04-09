@@ -172,7 +172,7 @@ Default log field mappings:
 | `service_name`          | `service.name` | Trace service name used for filtering and labels |
 | `enable_canary_tracing` | `enabled`      | Enables active tracing for CloudWatch Synthetics canaries |
 
-The reusable module only publishes tracing links and optional canary tracing. The monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent daemon plus Node.js ESM auto-instrumentation.
+The reusable module only publishes tracing links and optional canary tracing. The monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent sidecar plus Node.js ESM auto-instrumentation.
 
 ---
 
@@ -280,4 +280,4 @@ log("info", "request completed", {
 
 ## Application Signals (Level 2 — optional)
 
-For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically for arbitrary existing services — it requires manual instrumentation of the target application and a CloudWatch agent daemon task or equivalent collector setup.
+For service maps and distributed traces, follow the [AWS ECS Application Signals setup guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This package does not provision Application Signals infrastructure automatically for arbitrary existing services — it requires manual instrumentation of the target application and a sidecar-based CloudWatch agent setup for ECS or Fargate workloads. Daemon mode is intentionally out of scope.

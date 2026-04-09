@@ -68,7 +68,7 @@ variable "enable_canaries" {
 
 variable "enable_tracing" {
   type        = bool
-  description = "Enable OpenTelemetry/Application Signals for the demo backend and CloudWatch daemon on the ECS hosts."
+  description = "Enable OpenTelemetry/Application Signals for the demo backend using an in-task CloudWatch agent sidecar."
   default     = true
 }
 

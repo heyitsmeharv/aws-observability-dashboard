@@ -54,7 +54,7 @@ This creates:
 - VPC (uses your account's default VPC)
 - ECR repositories for frontend and backend
 - ECS cluster (EC2 launch type, Container Insights enabled)
-- CloudWatch agent daemon service for Application Signals when tracing is enabled
+- Backend ECS task with a CloudWatch agent sidecar for Application Signals when tracing is enabled
 - ALB with path-based routing
 - ECS task definitions and services
 - CloudWatch log groups

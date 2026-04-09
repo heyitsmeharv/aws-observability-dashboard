@@ -26,11 +26,96 @@ locals {
 
   tracing_service_name = "${local.name_prefix}-backend"
 
+  cwagent_config_content = jsonencode({
+    traces = {
+      traces_collected = {
+        application_signals = {}
+      }
+    }
+    logs = {
+      metrics_collected = {
+        application_signals = {}
+      }
+    }
+  })
+
   otel_resource_attributes = join(",", compact([
     "service.name=${local.tracing_service_name}",
     "deployment.environment=${var.environment}",
     "aws.log.group.names=${aws_cloudwatch_log_group.backend.name}",
   ]))
+
+  backend_container_environment = concat([
+    { name = "NODE_ENV", value = var.environment },
+    { name = "PORT", value = "4000" },
+    ], var.enable_tracing ? [
+    { name = "OTEL_RESOURCE_ATTRIBUTES", value = local.otel_resource_attributes },
+    { name = "OTEL_LOGS_EXPORTER", value = "none" },
+    { name = "OTEL_METRICS_EXPORTER", value = "none" },
+    { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4316" },
+    { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://localhost:4316/v1/traces" },
+    { name = "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", value = "true" },
+    { name = "OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT", value = "http://localhost:4316/v1/metrics" },
+    { name = "OTEL_TRACES_SAMPLER", value = "xray" },
+    { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://localhost:2000" },
+    { name = "NODE_OPTIONS", value = "--import @aws/aws-distro-opentelemetry-node-autoinstrumentation/register --experimental-loader=@opentelemetry/instrumentation/hook.mjs" },
+  ] : [])
+
+  backend_container_definitions = concat([
+    merge({
+      name      = "backend"
+      image     = "${aws_ecr_repository.backend.repository_url}:${var.backend_image_tag}"
+      essential = true
+      cpu       = 256
+      memory    = 512
+      portMappings = [
+        { containerPort = 4000, hostPort = 4000, protocol = "tcp" }
+      ]
+      environment = local.backend_container_environment
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "backend"
+        }
+      }
+      }, var.enable_tracing ? {
+      dependsOn = [
+        {
+          containerName = "ecs-cwagent"
+          condition     = "START"
+        }
+      ]
+    } : {})
+    ], var.enable_tracing ? [
+    {
+      name      = "ecs-cwagent"
+      image     = "public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest"
+      essential = true
+      cpu       = 128
+      memory    = 256
+      portMappings = [
+        { containerPort = 4316, hostPort = 4316, protocol = "tcp" },
+        { containerPort = 2000, hostPort = 2000, protocol = "tcp" },
+      ]
+      secrets = [
+        {
+          name      = "CW_CONFIG_CONTENT"
+          valueFrom = aws_ssm_parameter.cwagent_config[0].arn
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.cwagent[0].name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "cwagent"
+        }
+      }
+    }
+  ] : [])
 }
 
 data "aws_caller_identity" "current" {}
@@ -91,15 +176,9 @@ resource "aws_cloudwatch_log_group" "cwagent" {
 resource "aws_ssm_parameter" "cwagent_config" {
   count = var.enable_tracing ? 1 : 0
 
-  name = "/${var.project}/${var.environment}/observability/cwagent-config"
-  type = "String"
-  value = jsonencode({
-    traces = {
-      traces_collected = {
-        application_signals = {}
-      }
-    }
-  })
+  name  = "/${var.project}/${var.environment}/observability/cwagent-config"
+  type  = "String"
+  value = local.cwagent_config_content
 
   tags = local.common_tags
 }
@@ -329,16 +408,8 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "ecs_instances" {
   name        = "${local.name_prefix}-ecs-instances"
-  description = "Allow traffic from ALB to ECS container instances"
+  description = "Security group for ECS EC2 container instances"
   vpc_id      = local.vpc_id
-
-  ingress {
-    description     = "All from ALB"
-    from_port       = 0
-    to_port         = 65535
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
 
   egress {
     from_port   = 0
@@ -401,10 +472,103 @@ resource "aws_iam_role" "task_execution" {
   tags = local.common_tags
 }
 
-resource "aws_iam_role" "cwagent_task" {
+resource "aws_security_group" "backend_tasks" {
+  name        = "${local.name_prefix}-backend-tasks"
+  description = "Allow traffic from the ALB to backend ECS tasks"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    description     = "Backend HTTP from ALB"
+    from_port       = 4000
+    to_port         = 4000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_security_group" "application_signals_endpoints" {
   count = var.enable_tracing ? 1 : 0
 
-  name = "${local.name_prefix}-cwagent-task"
+  name        = "${local.name_prefix}-appsignals-endpoints"
+  description = "Allow backend ECS tasks to reach AWS interface endpoints used by Application Signals"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    description     = "HTTPS from backend ECS tasks"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend_tasks.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_vpc_endpoint" "cloudwatch_monitoring" {
+  count = var.enable_tracing ? 1 : 0
+
+  vpc_id              = local.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.monitoring"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.subnet_ids
+  security_group_ids  = [aws_security_group.application_signals_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-monitoring-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "xray" {
+  count = var.enable_tracing ? 1 : 0
+
+  vpc_id              = local.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.xray"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.subnet_ids
+  security_group_ids  = [aws_security_group.application_signals_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-xray-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  count = var.enable_tracing ? 1 : 0
+
+  vpc_id              = local.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.subnet_ids
+  security_group_ids  = [aws_security_group.application_signals_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-logs-endpoint"
+  })
+}
+
+resource "aws_iam_role" "backend_task" {
+  count = var.enable_tracing ? 1 : 0
+
+  name = "${local.name_prefix}-backend-task"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -423,10 +587,29 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy_attachment" "cwagent_server" {
+resource "aws_iam_role_policy" "task_execution_ssm" {
   count = var.enable_tracing ? 1 : 0
 
-  role       = aws_iam_role.cwagent_task[0].name
+  name = "${local.name_prefix}-task-execution-ssm"
+  role = aws_iam_role.task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+      ]
+      Resource = aws_ssm_parameter.cwagent_config[0].arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "backend_task_cloudwatch_agent" {
+  count = var.enable_tracing ? 1 : 0
+
+  role       = aws_iam_role.backend_task[0].name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
@@ -447,7 +630,7 @@ resource "aws_lb_target_group" "backend" {
   port        = 4000
   protocol    = "HTTP"
   vpc_id      = local.vpc_id
-  target_type = "instance"
+  target_type = "ip"
 
   health_check {
     path                = "/health"
@@ -513,6 +696,7 @@ resource "aws_launch_template" "ecs_instance" {
     echo ECS_CLUSTER=${aws_ecs_cluster.demo.name} >> /etc/ecs/ecs.config
     echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
     echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
+    echo ECS_ENABLE_TASK_ENI=true >> /etc/ecs/ecs.config
   EOF
   )
 
@@ -583,108 +767,17 @@ resource "aws_ecs_capacity_provider" "demo" {
 
 # ── ECS task definition ───────────────────────────────────────────────────────
 
-resource "aws_ecs_task_definition" "cwagent" {
-  count = var.enable_tracing ? 1 : 0
-
-  family                   = "${local.name_prefix}-cwagent"
-  network_mode             = "bridge"
-  requires_compatibilities = ["EC2"]
-  execution_role_arn       = aws_iam_role.task_execution.arn
-  task_role_arn            = aws_iam_role.cwagent_task[0].arn
-  cpu                      = 128
-  memory                   = 128
-  tags                     = local.common_tags
-
-  container_definitions = jsonencode([
-    {
-      name      = "cloudwatch-agent"
-      image     = "public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest"
-      essential = true
-
-      portMappings = [
-        { containerPort = 4316, hostPort = 4316, protocol = "tcp" },
-        { containerPort = 2000, hostPort = 2000, protocol = "tcp" },
-      ]
-
-      secrets = [
-        {
-          name      = "CW_CONFIG_CONTENT"
-          valueFrom = aws_ssm_parameter.cwagent_config[0].arn
-        }
-      ]
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.cwagent[0].name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "cwagent"
-        }
-      }
-    }
-  ])
-}
-
-resource "aws_ecs_service" "cwagent" {
-  count = var.enable_tracing ? 1 : 0
-
-  name                = "${local.name_prefix}-cwagent"
-  cluster             = aws_ecs_cluster.demo.id
-  task_definition     = aws_ecs_task_definition.cwagent[0].arn
-  launch_type         = "EC2"
-  scheduling_strategy = "DAEMON"
-  tags                = local.common_tags
-
-  depends_on = [
-    aws_iam_role_policy_attachment.task_execution,
-    aws_iam_role_policy_attachment.cwagent_server,
-  ]
-}
-
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${local.name_prefix}-backend"
-  network_mode             = "bridge"
+  network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
   execution_role_arn       = aws_iam_role.task_execution.arn
-  cpu                      = 256
-  memory                   = 512
+  task_role_arn            = var.enable_tracing ? aws_iam_role.backend_task[0].arn : null
+  cpu                      = var.enable_tracing ? 384 : 256
+  memory                   = var.enable_tracing ? 768 : 512
   tags                     = local.common_tags
 
-  container_definitions = jsonencode([
-    {
-      name      = "backend"
-      image     = "${aws_ecr_repository.backend.repository_url}:${var.backend_image_tag}"
-      essential = true
-      cpu       = 256
-      memory    = 512
-
-      portMappings = [
-        { containerPort = 4000, hostPort = 0, protocol = "tcp" }
-      ]
-
-      environment = concat([
-        { name = "NODE_ENV", value = var.environment },
-        { name = "PORT", value = "4000" },
-        ], var.enable_tracing ? [
-        { name = "OTEL_RESOURCE_ATTRIBUTES", value = local.otel_resource_attributes },
-        { name = "OTEL_LOGS_EXPORTER", value = "none" },
-        { name = "OTEL_METRICS_EXPORTER", value = "none" },
-        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-        { name = "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", value = "true" },
-        { name = "OTEL_TRACES_SAMPLER", value = "xray" },
-        { name = "NODE_OPTIONS", value = "--import @aws/aws-distro-opentelemetry-node-autoinstrumentation/register --experimental-loader=@opentelemetry/instrumentation/hook.mjs" },
-      ] : [])
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "backend"
-        }
-      }
-    }
-  ])
+  container_definitions = jsonencode(local.backend_container_definitions)
 }
 
 # ── ECS service ───────────────────────────────────────────────────────────────
@@ -707,10 +800,19 @@ resource "aws_ecs_service" "backend" {
     container_port   = 4000
   }
 
+  network_configuration {
+    subnets         = local.subnet_ids
+    security_groups = [aws_security_group.backend_tasks.id]
+  }
+
   depends_on = [
     aws_lb_listener.http,
     aws_iam_role_policy_attachment.task_execution,
-    aws_ecs_service.cwagent,
+    aws_iam_role_policy.task_execution_ssm,
+    aws_iam_role_policy_attachment.backend_task_cloudwatch_agent,
+    aws_vpc_endpoint.cloudwatch_monitoring,
+    aws_vpc_endpoint.xray,
+    aws_vpc_endpoint.logs,
   ]
 
   lifecycle {

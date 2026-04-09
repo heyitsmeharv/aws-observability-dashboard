@@ -60,9 +60,22 @@ const NODES = {
     x: 540,
     y: 160,
     label: "ECS Service",
-    sublabel: "App + task health",
+    sublabel: "App container",
     icon: "ecs",
     tone: "#2bb3ff",
+    monitored: true,
+  },
+  sidecar: {
+    x: 736,
+    y: 232,
+    w: 128,
+    h: 42,
+    iconSize: 30,
+    compact: true,
+    label: "CW Agent",
+    sublabel: "Task sidecar",
+    icon: "sidecar",
+    tone: "#7dd3fc",
     monitored: true,
   },
   downstream: {
@@ -115,12 +128,26 @@ const NODES = {
   },
 };
 
+function nodeWidth(node) {
+  return node.w ?? NODE_W;
+}
+
+function nodeHeight(node) {
+  return node.h ?? NODE_H;
+}
+
+function nodeIconSize(node) {
+  return node.iconSize ?? ICON_SIZE;
+}
+
 function point(id, side) {
   const node = NODES[id];
-  if (side === "left") return { x: node.x, y: node.y + NODE_H / 2 };
-  if (side === "right") return { x: node.x + NODE_W, y: node.y + NODE_H / 2 };
-  if (side === "top") return { x: node.x + NODE_W / 2, y: node.y };
-  return { x: node.x + NODE_W / 2, y: node.y + NODE_H };
+  const width = nodeWidth(node);
+  const height = nodeHeight(node);
+  if (side === "left") return { x: node.x, y: node.y + height / 2 };
+  if (side === "right") return { x: node.x + width, y: node.y + height / 2 };
+  if (side === "top") return { x: node.x + width / 2, y: node.y };
+  return { x: node.x + width / 2, y: node.y + height };
 }
 
 function linePath(fromId, fromSide, toId, toSide) {
@@ -147,7 +174,8 @@ const EDGES = [
   { id: "e-al-da", d: curvePath("alb", "bottom", "dashboard", "top", 0, 68, 0, -54) },
   { id: "e-be-lo", d: curvePath("backend", "bottom", "logs", "top", 0, 68, 0, -54) },
   { id: "e-lo-da", d: linePath("logs", "left", "dashboard", "right") },
-  { id: "e-be-ot", d: curvePath("backend", "bottom", "otel", "top", 38, 88, 0, -56) },
+  { id: "e-be-sc", d: linePath("backend", "right", "sidecar", "left") },
+  { id: "e-sc-ot", d: linePath("sidecar", "bottom", "otel", "top") },
 ];
 
 function edgeById(id) {
@@ -196,6 +224,10 @@ function nodeVisual(id, flight, metrics) {
 
   if (id === "otel" && (signals.tracesHot || flight?.endpointId === "dependency")) {
     return { fill: "#1d1431", stroke: COLORS.trace, textColor: COLORS.text, glow: "url(#glow-md)", badge: "active" };
+  }
+
+  if (id === "sidecar" && (signals.tracesHot || flight?.endpointId === "dependency")) {
+    return { fill: "#102033", stroke: "#7dd3fc", textColor: COLORS.text, glow: "url(#glow-sm)", badge: "running" };
   }
 
   if (id === "logs" && signals.logsHot) {
@@ -300,7 +332,7 @@ function edgeVisual(id, flight, metrics) {
     };
   }
 
-  if (id === "e-be-ot" && (signals.tracesHot || flight?.endpointId === "dependency")) {
+  if ((id === "e-be-sc" || id === "e-sc-ot") && (signals.tracesHot || flight?.endpointId === "dependency")) {
     return {
       stroke: COLORS.trace,
       strokeWidth: 2.2,
@@ -369,6 +401,14 @@ function ServiceTile({ kind, x, y, tone }) {
         </>
       )}
 
+      {kind === "sidecar" && (
+        <>
+          <rect x="5" y="8" width="8" height="14" rx="2" {...common} />
+          <rect x="17" y="10" width="8" height="10" rx="2" {...common} />
+          <path d="M13 15h4M16 13l2 2-2 2" {...common} />
+        </>
+      )}
+
       {kind === "dependency" && (
         <>
           <ellipse cx="15" cy="9" rx="7" ry="3" {...common} />
@@ -422,19 +462,21 @@ function ServiceTile({ kind, x, y, tone }) {
 
 function PulseRing({ nodeId, color, active }) {
   if (!active) return null;
+  const node = NODES[nodeId];
+  const ringBase = Math.max(nodeWidth(node), nodeHeight(node)) / 2 - 6;
   const center = {
-    x: NODES[nodeId].x + NODE_W / 2,
-    y: NODES[nodeId].y + NODE_H / 2,
+    x: node.x + nodeWidth(node) / 2,
+    y: node.y + nodeHeight(node) / 2,
   };
 
   return (
     <>
-      <circle cx={center.x} cy={center.y} r="30" fill="none" stroke={color} strokeWidth="1.5" opacity="0">
-        <animate attributeName="r" from="28" to="54" dur="1.4s" repeatCount="indefinite" />
+      <circle cx={center.x} cy={center.y} r={ringBase} fill="none" stroke={color} strokeWidth="1.5" opacity="0">
+        <animate attributeName="r" from={ringBase - 2} to={ringBase + 24} dur="1.4s" repeatCount="indefinite" />
         <animate attributeName="opacity" from="0.65" to="0" dur="1.4s" repeatCount="indefinite" />
       </circle>
-      <circle cx={center.x} cy={center.y} r="30" fill="none" stroke={color} strokeWidth="1" opacity="0">
-        <animate attributeName="r" from="28" to="54" dur="1.4s" begin="0.7s" repeatCount="indefinite" />
+      <circle cx={center.x} cy={center.y} r={ringBase} fill="none" stroke={color} strokeWidth="1" opacity="0">
+        <animate attributeName="r" from={ringBase - 2} to={ringBase + 24} dur="1.4s" begin="0.7s" repeatCount="indefinite" />
         <animate attributeName="opacity" from="0.45" to="0" dur="1.4s" begin="0.7s" repeatCount="indefinite" />
       </circle>
     </>
@@ -470,9 +512,13 @@ function PacketDot({ flight }) {
 
 function NodeCard({ id, node, flight, metrics }) {
   const visual = nodeVisual(id, flight, metrics);
-  const iconX = node.x + 12;
-  const iconY = node.y + Math.round((NODE_H - ICON_SIZE) / 2);
-  const labelX = node.x + 56;
+  const width = nodeWidth(node);
+  const height = nodeHeight(node);
+  const iconSize = nodeIconSize(node);
+  const compact = node.compact === true;
+  const iconX = node.x + (compact ? 10 : 12);
+  const iconY = node.y + Math.round((height - iconSize) / 2);
+  const labelX = iconX + iconSize + 12;
   const labelFontSize = node.label.length > 12 ? 11 : 12;
 
   return (
@@ -480,8 +526,8 @@ function NodeCard({ id, node, flight, metrics }) {
       <rect
         x={node.x}
         y={node.y}
-        width={NODE_W}
-        height={NODE_H}
+        width={width}
+        height={height}
         rx="12"
         fill={visual.fill}
         stroke={visual.stroke}
@@ -494,7 +540,7 @@ function NodeCard({ id, node, flight, metrics }) {
       {node.tag && (
         <g>
           <rect
-            x={node.x + NODE_W - 34}
+            x={node.x + width - 34}
             y={node.y + 8}
             width="24"
             height="14"
@@ -504,7 +550,7 @@ function NodeCard({ id, node, flight, metrics }) {
             strokeWidth="1"
           />
           <text
-            x={node.x + NODE_W - 22}
+            x={node.x + width - 22}
             y={node.y + 18}
             textAnchor="middle"
             fontSize="8.5"
@@ -519,16 +565,16 @@ function NodeCard({ id, node, flight, metrics }) {
       )}
 
       {node.monitored && (
-        <circle cx={node.x + NODE_W - 14} cy={node.y + NODE_H - 13} r="3.5" fill={visual.stroke} opacity="0.9">
+        <circle cx={node.x + width - 14} cy={node.y + height - 13} r="3.5" fill={visual.stroke} opacity="0.9">
           <animate attributeName="opacity" values="0.9;0.25;0.9" dur="2.1s" repeatCount="indefinite" />
         </circle>
       )}
 
       <text
         x={labelX}
-        y={node.y + 33}
+        y={node.y + (compact ? 18 : 33)}
         fill={visual.textColor}
-        fontSize={labelFontSize}
+        fontSize={compact ? 10.5 : labelFontSize}
         fontWeight="700"
         fontFamily="system-ui, sans-serif"
       >
@@ -537,9 +583,9 @@ function NodeCard({ id, node, flight, metrics }) {
 
       <text
         x={labelX}
-        y={node.y + 51}
+        y={node.y + (compact ? 31 : 51)}
         fill="#8b949e"
-        fontSize="10"
+        fontSize={compact ? "8.5" : "10"}
         fontFamily="system-ui, sans-serif"
       >
         {node.sublabel}
@@ -616,6 +662,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
     cloudfront: Boolean(flight?.phase),
     alb: Boolean(flight?.phase) || alarms !== "idle",
     backend: Boolean(flight?.phase),
+    sidecar: signals.tracesHot || flight?.endpointId === "dependency",
     logs: signals.logsHot,
     dashboard: signals.dashboardHot,
     alarms: alarms !== "idle",
@@ -628,6 +675,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
     cloudfront: NODES.cloudfront.tone,
     alb: alarms === "alert" ? COLORS.danger : alarms === "warn" ? COLORS.warn : NODES.alb.tone,
     backend: nodeVisual("backend", flight, metrics).stroke,
+    sidecar: "#7dd3fc",
     logs: COLORS.logs,
     dashboard: COLORS.dashboard,
     alarms: alarms === "alert" ? COLORS.danger : alarms === "warn" ? COLORS.warn : NODES.alarms.tone,
@@ -747,7 +795,7 @@ export default function ArchDiagramScene({ flight, metrics }) {
           Solid = request flow | Dashed = monitoring flow | PKG = provisioned by the module | OPT = optional feature
         </text>
         <text x={W - 12} y={H - 10} textAnchor="end" fill="#6e7681" fontSize="10" fontFamily="system-ui, sans-serif">
-          Dashboard | Alarms | Logs Insights | Synthetics | OpenTelemetry
+          Dashboard | Alarms | Logs Insights | Synthetics | OTel + sidecar
         </text>
       </svg>
     </div>
