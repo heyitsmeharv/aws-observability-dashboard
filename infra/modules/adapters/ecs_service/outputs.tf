@@ -22,6 +22,21 @@ output "dashboard_arn" {
   value       = module.dashboards.dashboard_arn
 }
 
+output "tracing_service_name" {
+  description = "Tracing service name used for X-Ray/Application Signals drilldowns. Null when tracing is disabled."
+  value       = var.tracing_enabled ? local.resolved_tracing_service_name : null
+}
+
+output "xray_trace_map_url" {
+  description = "AWS X-Ray trace map URL. Null when tracing is disabled."
+  value       = var.tracing_enabled ? "https://console.aws.amazon.com/xray/home?region=${var.region}#/service-map" : null
+}
+
+output "xray_traces_url" {
+  description = "AWS X-Ray traces URL filtered to the tracing service. Null when tracing is disabled."
+  value       = var.tracing_enabled ? "https://console.aws.amazon.com/xray/home?region=${var.region}#/traces?filter=${urlencode(format("service(\"%s\")", local.resolved_tracing_service_name))}" : null
+}
+
 # ── Logs Insights outputs ─────────────────────────────────────────────────────
 
 output "query_definition_ids" {

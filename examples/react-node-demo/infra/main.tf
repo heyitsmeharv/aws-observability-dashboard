@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 locals {
   name_prefix = "${var.project}-${var.environment}"
 
@@ -583,25 +594,41 @@ resource "aws_ecs_service" "backend" {
 # ── Observability: ECS service adapter ───────────────────────────────────────
 
 module "observability" {
-  source = "../../../infra/modules/adapters/ecs_service"
+  source = "../../../infra/modules/adapters/platform_service"
 
-  project     = var.project
-  environment = var.environment
-  region      = var.aws_region
+  service = {
+    name             = var.project
+    environment      = var.environment
+    region           = var.aws_region
+    kind             = "ecs_ec2_alb"
+    ecs_cluster_name = aws_ecs_cluster.demo.name
+    ecs_service_name = aws_ecs_service.backend.name
+    alb_arn          = aws_lb.demo.arn
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
 
-  ecs_cluster_name        = aws_ecs_cluster.demo.name
-  ecs_service_name        = aws_ecs_service.backend.name
-  alb_arn_suffix          = aws_lb.demo.arn_suffix
-  target_group_arn_suffix = aws_lb_target_group.backend.arn_suffix
+  logging = {
+    log_group_names = [aws_cloudwatch_log_group.backend.name]
+  }
 
-  log_group_names = [aws_cloudwatch_log_group.backend.name]
+  dashboard = {
+    owner = "obs-demo"
+  }
 
-  create_sns_topic = var.create_sns_topic
+  alerts = {
+    create_sns_topic = var.create_sns_topic
+  }
 
-  enable_canaries              = var.enable_canaries
-  frontend_url                 = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}" : null
-  api_endpoint                 = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}/health" : null
-  canary_artifacts_bucket_name = var.enable_canaries ? aws_s3_bucket.canary_artifacts[0].bucket : null
+  canaries = {
+    enabled               = var.enable_canaries
+    frontend_url          = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}" : null
+    api_endpoint          = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}/health" : null
+    artifacts_bucket_name = var.enable_canaries ? aws_s3_bucket.canary_artifacts[0].bucket : null
+  }
+
+  tracing = {
+    enabled = var.enable_canaries
+  }
 
   depends_on = [
     aws_ecs_service.backend,

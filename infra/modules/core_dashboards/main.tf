@@ -15,10 +15,37 @@ locals {
 
   # Primary log group for Logs Insights widgets (first in the list)
   primary_log_group = var.log_group_names[0]
+
+  log_fields = var.log_field_names
+
+  resolved_tracing_service_name = coalesce(var.tracing_service_name, var.project)
+
+  xray_trace_map_url = var.tracing_enabled ? "https://console.aws.amazon.com/xray/home?region=${var.region}#/service-map" : null
+
+  xray_traces_url = var.tracing_enabled ? "https://console.aws.amazon.com/xray/home?region=${var.region}#/traces?filter=${urlencode(format("service(\"%s\")", local.resolved_tracing_service_name))}" : null
+
+  header_markdown = join("\n", compact([
+    "# ${var.project} — ${var.environment}",
+    "Cluster: `${var.ecs_cluster_name}` · Service: `${var.ecs_service_name}` · Region: `${var.region}`",
+    var.service_owner != null ? "Owner: `${var.service_owner}`" : null,
+  ]))
+
+  quick_link_lines = compact([
+    "### Quick links",
+    "- [ECS service console](https://console.aws.amazon.com/ecs/v2/clusters/${var.ecs_cluster_name}/services/${var.ecs_service_name})",
+    "- [Logs Insights](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#logsV2:logs-insights)",
+    "- [CloudWatch Alarms](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#alarmsV2:)",
+    var.tracing_enabled ? "- [X-Ray trace map](${local.xray_trace_map_url})" : null,
+    var.tracing_enabled ? "- [X-Ray traces for ${local.resolved_tracing_service_name}](${local.xray_traces_url})" : null,
+    var.runbook_url != null ? "- [Runbook](${var.runbook_url})" : null,
+  ])
+
+  quick_links_markdown = join("\n", local.quick_link_lines)
+  quick_links_height   = max(3, length(local.quick_link_lines))
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "${local.name_prefix}"
+  dashboard_name = local.name_prefix
 
   dashboard_body = jsonencode({
     widgets = concat(
@@ -35,7 +62,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           width  = 24
           height = 2
           properties = {
-            markdown = "# ${var.project} — ${var.environment}\nCluster: `${var.ecs_cluster_name}` · Service: `${var.ecs_service_name}` · Region: `${var.region}`"
+            markdown = local.header_markdown
           }
         },
 
@@ -60,11 +87,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         # ══════════════════════════════════════════════════════════════════════
 
         {
-          type   = "text"
-          x      = 0
-          y      = 8
-          width  = 24
-          height = 1
+          type       = "text"
+          x          = 0
+          y          = 8
+          width      = 24
+          height     = 1
           properties = { markdown = "### Front door" }
         },
 
@@ -249,11 +276,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         # ══════════════════════════════════════════════════════════════════════
 
         {
-          type   = "text"
-          x      = 0
-          y      = 33
-          width  = 24
-          height = 1
+          type       = "text"
+          x          = 0
+          y          = 33
+          width      = 24
+          height     = 1
           properties = { markdown = "### ECS health" }
         },
 
@@ -290,7 +317,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             stat   = "Average"
             period = 60
             metrics = [
-              ["ECS/ContainerInsights", "CpuUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -303,13 +330,13 @@ resource "aws_cloudwatch_dashboard" "main" {
           width  = 8
           height = 6
           properties = {
-            title  = "ECS Memory Utilisation (MB)"
+            title  = "ECS Memory Utilisation (%)"
             region = var.region
             view   = "timeSeries"
             stat   = "Average"
             period = 60
             metrics = [
-              ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -329,7 +356,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             period = 60
             yAxis  = { left = { min = 0, max = 100 } }
             metrics = [
-              ["ECS/ContainerInsights", "CpuUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -342,14 +369,14 @@ resource "aws_cloudwatch_dashboard" "main" {
           width  = 8
           height = 6
           properties = {
-            title  = "ECS Memory Utilised (MB)"
+            title  = "ECS Memory Utilisation (%)"
             region = var.region
             view   = "gauge"
             stat   = "Average"
             period = 60
-            yAxis  = { left = { min = 0, max = 1024 } }
+            yAxis  = { left = { min = 0, max = 100 } }
             metrics = [
-              ["ECS/ContainerInsights", "MemoryUtilized", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
+              ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
             ]
           }
         },
@@ -399,7 +426,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title  = "Latest Errors (last 1 hour)"
             region = var.region
             view   = "table"
-            query  = "SOURCE '${local.primary_log_group}' | fields @timestamp, level, statusCode, route, @message | filter level = \"error\" or statusCode >= 500 | sort @timestamp desc | limit 50"
+            query  = "SOURCE '${local.primary_log_group}' | fields @timestamp, ${local.log_fields.level}, ${local.log_fields.status_code}, ${local.log_fields.route}, @message | filter ${local.log_fields.level} = \"error\" or ${local.log_fields.status_code} >= 500 | sort @timestamp desc | limit 50"
           }
         },
 
@@ -414,7 +441,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title  = "Error Rate Over Time (5-min buckets)"
             region = var.region
             view   = "bar"
-            query  = "SOURCE '${local.primary_log_group}' | filter statusCode >= 500 or level = \"error\" | stats count(*) as errors by bin(5m) | sort @timestamp asc"
+            query  = "SOURCE '${local.primary_log_group}' | filter ${local.log_fields.status_code} >= 500 or ${local.log_fields.level} = \"error\" | stats count(*) as errors by bin(5m) | sort @timestamp asc"
           }
         },
 
@@ -429,7 +456,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title  = "Request Volume Over Time (5-min buckets)"
             region = var.region
             view   = "bar"
-            query  = "SOURCE '${local.primary_log_group}' | filter ispresent(route) | stats count(*) as requestCount by bin(5m) | sort @timestamp asc"
+            query  = "SOURCE '${local.primary_log_group}' | filter ispresent(${local.log_fields.route}) | stats count(*) as requestCount by bin(5m) | sort @timestamp asc"
           }
         },
 
@@ -444,7 +471,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title  = "Top Failing Routes"
             region = var.region
             view   = "table"
-            query  = "SOURCE '${local.primary_log_group}' | filter statusCode >= 400 | stats count(*) as errorCount by route, statusCode | sort errorCount desc | limit 20"
+            query  = "SOURCE '${local.primary_log_group}' | filter ${local.log_fields.status_code} >= 400 | stats count(*) as errorCount by ${local.log_fields.route}, ${local.log_fields.status_code} | sort errorCount desc | limit 20"
           }
         },
 
@@ -459,7 +486,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title  = "P99 Latency by Route"
             region = var.region
             view   = "table"
-            query  = "SOURCE '${local.primary_log_group}' | filter ispresent(durationMs) | stats pct(durationMs, 99) as p99Ms, pct(durationMs, 50) as p50Ms, count(*) as requests by route | sort p99Ms desc"
+            query  = "SOURCE '${local.primary_log_group}' | filter ispresent(${local.log_fields.latency_ms}) | stats pct(${local.log_fields.latency_ms}, 99) as p99Ms, pct(${local.log_fields.latency_ms}, 50) as p50Ms, count(*) as requests by ${local.log_fields.route} | sort p99Ms desc"
           }
         },
 
@@ -469,9 +496,9 @@ resource "aws_cloudwatch_dashboard" "main" {
           x      = 0
           y      = 73
           width  = 24
-          height = 3
+          height = local.quick_links_height
           properties = {
-            markdown = "### Quick links\n- [ECS service console](https://console.aws.amazon.com/ecs/v2/clusters/${var.ecs_cluster_name}/services/${var.ecs_service_name})\n- [Logs Insights](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#logsV2:logs-insights)\n- [CloudWatch Alarms](https://console.aws.amazon.com/cloudwatch/home?region=${var.region}#alarmsV2:)"
+            markdown = local.quick_links_markdown
           }
         },
       ],

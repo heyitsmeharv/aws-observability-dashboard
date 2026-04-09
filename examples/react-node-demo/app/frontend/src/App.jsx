@@ -1,64 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
-import ArchDiagram from "./ArchDiagram.jsx";
+import ArchDiagram from "./ArchDiagramScene.jsx";
 import Charts from "./Charts.jsx";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const ENDPOINTS = [
-  {
-    id: "ok",
-    label: "Healthy",
-    description: "Fast 200 — normal traffic",
-    url: `${API}/ok`,
-    method: "GET",
-    badgeColor: "#3fb950",
-    expectedMs: 200,
-  },
-  {
-    id: "slow",
-    label: "Slow (3s)",
-    description: "3-second delay — P99 latency spike",
-    url: `${API}/slow?ms=3000`,
-    method: "GET",
-    badgeColor: "#d29922",
-    expectedMs: 3200,
-  },
-  {
-    id: "slow5",
-    label: "Very slow (5s)",
-    description: "5-second delay — triggers latency alarm",
-    url: `${API}/slow?ms=5000`,
-    method: "GET",
-    badgeColor: "#d29922",
-    expectedMs: 5200,
-  },
-  {
-    id: "fail",
-    label: "500 Error",
-    description: "Intentional 500 — triggers 5xx alarm",
-    url: `${API}/fail`,
-    method: "GET",
-    badgeColor: "#f85149",
-    expectedMs: 200,
-  },
-  {
-    id: "dependency",
-    label: "Dependency (30%↯)",
-    description: "Flaky downstream — shows dependency path",
-    url: `${API}/dependency?failRate=0.3&latencyMs=800`,
-    method: "GET",
-    badgeColor: "#bc8cff",
-    expectedMs: 900,
-  },
-  {
-    id: "items",
-    label: "List items",
-    description: "Normal business read — clean 200 traffic",
-    url: `${API}/items`,
-    method: "GET",
-    badgeColor: "#58a6ff",
-    expectedMs: 200,
-  },
+  { id: "ok",         label: "Healthy",          description: "Fast 200 — normal traffic",                url: `${API}/ok`,                                    method: "GET", badgeColor: "#3fb950" },
+  { id: "slow",       label: "Slow (3s)",         description: "3-second delay — P99 latency spike",      url: `${API}/slow?ms=3000`,                          method: "GET", badgeColor: "#d29922" },
+  { id: "slow5",      label: "Very slow (5s)",    description: "5-second delay — triggers latency alarm", url: `${API}/slow?ms=5000`,                          method: "GET", badgeColor: "#d29922" },
+  { id: "fail",       label: "500 Error",         description: "Intentional 500 — triggers 5xx alarm",   url: `${API}/fail`,                                  method: "GET", badgeColor: "#f85149" },
+  { id: "dependency", label: "Dependency (30%↯)", description: "Flaky downstream — shows dependency path", url: `${API}/dependency?failRate=0.3&latencyMs=800`, method: "GET", badgeColor: "#bc8cff" },
+  { id: "items",      label: "List items",        description: "Normal business read — clean 200 traffic", url: `${API}/items`,                                method: "GET", badgeColor: "#58a6ff" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,6 +32,11 @@ function endpointPath(url) {
   }
 }
 
+// Visual animation timing — decoupled from actual request latency so the packet
+// is always visible regardless of how fast the server responds.
+const VISUAL_MS = 1600;      // per-edge animateMotion duration
+const RECEIVED_AT_MS = 1850; // trigger "received" state when packet is ~95% across last edge
+
 // ── Endpoint card ─────────────────────────────────────────────────────────────
 
 function EndpointCard({ endpoint, onFlight, onComplete }) {
@@ -88,6 +45,7 @@ function EndpointCard({ endpoint, onFlight, onComplete }) {
   const call = async () => {
     setLoading(true);
     const flightId = `${endpoint.id}-${Date.now()}`;
+    const animStart = Date.now();
     const edges = endpoint.id === "dependency"
       ? ["e-br-cf", "e-cf-al", "e-al-be", "e-be-ds"]
       : ["e-br-cf", "e-cf-al", "e-al-be"];
@@ -98,7 +56,7 @@ function EndpointCard({ endpoint, onFlight, onComplete }) {
       endpointId: endpoint.id,
       edges,
       dest,
-      durationMs: endpoint.expectedMs,
+      durationMs: VISUAL_MS,
       phase: "flying",
       error: false,
     });
@@ -106,32 +64,26 @@ function EndpointCard({ endpoint, onFlight, onComplete }) {
     const start = Date.now();
     try {
       const res = await fetch(endpoint.url, { method: endpoint.method });
-      const body = await res.json().catch(() => ({}));
+      await res.json().catch(() => {});
       const durationMs = Date.now() - start;
+      // Re-enable the button as soon as the response arrives.
+      setLoading(false);
+      // Log with real timing immediately so the request log is accurate.
+      onComplete({ id: flightId, method: endpoint.method, path: endpointPath(endpoint.url), status: res.status, durationMs, ts: Date.now() });
+      // For fast requests: wait until the packet is near the end of the path before flashing.
+      // For slow requests (> RECEIVED_AT_MS): transition happens immediately.
+      const wait = Math.max(0, RECEIVED_AT_MS - (Date.now() - animStart));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       onFlight((f) => f?.id === flightId ? { ...f, phase: "received", error: res.status >= 500 } : f);
-      onComplete({
-        id: flightId,
-        method: endpoint.method,
-        path: endpointPath(endpoint.url),
-        status: res.status,
-        durationMs,
-        ts: Date.now(),
-      });
       setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1500);
     } catch (err) {
       const durationMs = Date.now() - start;
-      onFlight((f) => f?.id === flightId ? { ...f, phase: "received", error: true } : f);
-      onComplete({
-        id: flightId,
-        method: endpoint.method,
-        path: endpointPath(endpoint.url),
-        status: 0,
-        durationMs,
-        ts: Date.now(),
-      });
-      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1500);
-    } finally {
       setLoading(false);
+      onComplete({ id: flightId, method: endpoint.method, path: endpointPath(endpoint.url), status: 0, durationMs, ts: Date.now() });
+      const wait = Math.max(0, RECEIVED_AT_MS - (Date.now() - animStart));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      onFlight((f) => f?.id === flightId ? { ...f, phase: "received", error: true } : f);
+      setTimeout(() => onFlight((f) => f?.id === flightId ? null : f), 1500);
     }
   };
 
@@ -383,10 +335,10 @@ export default function App() {
           note="all routes"
         />
         <StatCard
-          label="Monitored"
-          value="2"
+          label="Package surface"
+          value="5"
           accent="#bc8cff"
-          note="ALB + ECS backend"
+          note="dashboard + alarms + logs + canaries + traces"
         />
       </div>
 
@@ -495,7 +447,7 @@ export default function App() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                 <tbody>
                   {Object.entries(metrics.routes).map(([route, r]) => (
-                    <tr key={route} style={{ borderBottom: "1px solid #161b22" }}>
+                    <tr key={route} style={{ borderBottom: "1px solid #21262d" }}>
                       <td style={{
                         padding: "5px 12px",
                         fontFamily: "'Consolas', monospace",

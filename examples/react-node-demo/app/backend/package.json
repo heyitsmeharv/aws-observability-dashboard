@@ -1,5 +1,6 @@
 {
   "name": "obs-demo-backend",
+  "private": true,
   "version": "1.0.0",
   "description": "Demo Node/Express API — generates realistic signals for the observability package.",
   "main": "src/server.js",
@@ -9,7 +10,6 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "uuid": "^9.0.1"
+    "express": "^4.19.2"
   }
 }

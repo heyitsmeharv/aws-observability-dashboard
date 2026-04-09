@@ -38,6 +38,30 @@ variable "log_group_names" {
   description = "List of CloudWatch log group names to include in log analysis widgets."
 }
 
+variable "service_owner" {
+  type        = string
+  description = "Optional owner/team label rendered in the dashboard header."
+  default     = null
+}
+
+variable "runbook_url" {
+  type        = string
+  description = "Optional runbook URL linked from the dashboard."
+  default     = null
+}
+
+variable "tracing_enabled" {
+  type        = bool
+  description = "When true, renders X-Ray tracing drilldowns in the dashboard."
+  default     = false
+}
+
+variable "tracing_service_name" {
+  type        = string
+  description = "Tracing service name used for X-Ray drilldowns."
+  default     = null
+}
+
 variable "canary_name" {
   type        = string
   description = "Name of the CloudWatch Synthetics canary. Set to null to omit the canary widget."
@@ -56,4 +80,26 @@ variable "alarm_arns" {
     canary_failure      = optional(string)
   })
   description = "Map of alarm ARNs from the core_alarms module. Used for alarm widgets — CloudWatch requires full ARNs, not names."
+}
+
+variable "log_field_names" {
+  type = object({
+    level       = string
+    route       = string
+    method      = string
+    status_code = string
+    latency_ms  = string
+    request_id  = string
+    source_ip   = string
+  })
+  description = "Mapping of logical HTTP log fields to the actual field names present in CloudWatch Logs."
+  default = {
+    level       = "level"
+    route       = "route"
+    method      = "method"
+    status_code = "statusCode"
+    latency_ms  = "durationMs"
+    request_id  = "requestId"
+    source_ip   = "sourceIp"
+  }
 }

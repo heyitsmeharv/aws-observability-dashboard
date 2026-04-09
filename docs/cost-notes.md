@@ -10,13 +10,13 @@ All figures are approximate and based on eu-west-2 (London) pricing as of 2024. 
 
 **Pricing:** $3.00 per dashboard per month (first 3 dashboards free).
 
-This package creates 4 dashboards per deployment:
-- `overview`
-- `service`
-- `operations`
-- `log-analysis`
+This package creates 1 dashboard per deployment with sections for:
+- overview
+- service
+- operations
+- log analysis
 
-**Estimated cost:** ~$3/month (1 free tier dashboard, 3 billed).
+**Estimated cost:** $0/month while you are within the first 3 dashboards in an account; otherwise about $3/month per deployment.
 
 ---
 
@@ -96,7 +96,7 @@ Container Insights is enabled on the ECS cluster in the demo. For a single `t3.s
 
 | Component                          | Monthly cost  |
 |------------------------------------|---------------|
-| Dashboards (4, 1 free)             | ~$3.00        |
+| Dashboard (1)                      | $0.00-$3.00   |
 | Alarms (8)                         | ~$0.80        |
 | Container Insights (1 × t3.small)  | ~$1.20        |
 | Log storage (30-day retention)     | Varies        |

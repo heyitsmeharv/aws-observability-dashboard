@@ -1,5 +1,6 @@
 {
   "name": "obs-demo-frontend",
+  "private": true,
   "version": "1.0.0",
   "description": "Demo React frontend — exercises the backend API to generate observable traffic.",
   "type": "module",
