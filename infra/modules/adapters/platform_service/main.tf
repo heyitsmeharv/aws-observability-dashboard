@@ -41,7 +41,7 @@ locals {
 
   alb_arn_suffix = try(split("loadbalancer/", var.service.alb_arn)[1], "")
 
-  target_group_arn_suffix = try(split("targetgroup/", var.service.target_group_arn)[1], "")
+  target_group_arn_suffix = try(regex("targetgroup/.+$", var.service.target_group_arn), "")
 }
 
 resource "terraform_data" "validate" {
