@@ -122,7 +122,7 @@ The `examples/react-node-demo` directory deploys a complete ECS stack — React 
 
 Use this demo when you want a realistic workload plus a separate UI that helps generate traffic and validate the package behaviour. It is a companion test harness for the module, not a runtime dependency for consumers.
 
-The sandbox demo enables Application Signals tracing by default. It does this with ADOT auto-instrumentation inside the Node backend container and a CloudWatch agent sidecar in the same ECS task. The demo backend intentionally uses CommonJS because AWS currently recommends that over ESM for Application Signals.
+The sandbox demo enables Application Signals tracing by default. It does this with a CloudWatch agent sidecar plus the AWS-documented Node CommonJS init-container pattern: an `init` container copies `autoinstrumentation.js` into a shared task volume, and the backend starts with `NODE_OPTIONS=--require /otel-auto-instrumentation-node/autoinstrumentation.js`.
 
 See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for step-by-step instructions.
 
@@ -151,7 +151,7 @@ Dashboards, alarms, Logs Insights, and canaries around existing AWS resources. T
 
 ### Level 2 — Application Signals (requires app instrumentation)
 
-For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module exposes trace drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none. The demo stack includes a working reference implementation using ADOT auto-instrumentation for the backend container plus a CloudWatch agent sidecar in the same ECS task, and keeps the backend on CommonJS because AWS documents Node ESM support as limited.
+For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module exposes trace drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none. The demo stack now follows AWS’s documented Node CommonJS pattern: a CloudWatch agent sidecar plus an `init` container that injects the ADOT Node auto-instrumentation into the backend task. AWS still documents Node ESM support as limited.
 
 ---
 
