@@ -26,6 +26,14 @@ const NODE_ENV = process.env.NODE_ENV ?? "development";
 const app = express();
 app.use(express.json());
 
+// CORS — permissive for local development (Vite proxy handles this in dev;
+// CloudFront provides same-origin in prod, but the header is harmless either way).
+app.use((_req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
 // ── Structured logger ──────────────────────────────────────────────────────
 
 function log(level, message, fields = {}) {
@@ -244,13 +252,6 @@ app.post("/api/items", (req, res) => {
 // Live metrics — rolling 60-second summary + 5-minute history, polled by the frontend
 app.get("/api/metrics", (_req, res) => {
   res.json({ ...metricsStore.summary(), history: metricsStore.history() });
-});
-
-// CORS for local development
-app.use((_req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  next();
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────

@@ -50,26 +50,26 @@ function nodeStyle(id, flight, metrics) {
 
   if (flight?.dest === id && flight.phase === "received") {
     return flight.error
-      ? { fill: "#2d1117", stroke: "#f85149", sw: 2.5, filter: "url(#glow-red)" }
-      : { fill: "#0d2010", stroke: "#3fb950", sw: 2.5, filter: "url(#glow-green)" };
+      ? { fill: "#2d1117", stroke: "#f85149", sw: 2.5, filter: "url(#glow)", textColor: "#e6edf3" }
+      : { fill: "#0d2010", stroke: "#3fb950", sw: 2.5, filter: "url(#glow)", textColor: "#e6edf3" };
   }
 
   if (id === "alb" && flight?.phase === "flying" && flight.edges.includes("e-al-be")) {
-    return { fill: "#0d1f40", stroke: "#58a6ff", sw: 2, filter: "url(#glow-blue)" };
+    return { fill: "#0d1f40", stroke: "#58a6ff", sw: 2, filter: "url(#glow)", textColor: "#e6edf3" };
   }
 
   if (id === "backend" && metrics?.total.requests > 0) {
     const r = metrics.total.errorRate;
-    if (r >= 50) return { fill: "#2d1117", stroke: "#f85149", sw: 2, filter: "url(#glow-red)" };
-    if (r >= 10) return { fill: "#1e180a", stroke: "#d29922", sw: 2, filter: "url(#glow-yellow)" };
-    return { fill: "#0d2010", stroke: "#3fb950", sw: 1.5, filter: "url(#glow-green)" };
+    if (r >= 50) return { fill: "#2d1117", stroke: "#f85149", sw: 2, filter: "url(#glow)",    textColor: "#e6edf3" };
+    if (r >= 10) return { fill: "#1e180a", stroke: "#d29922", sw: 2, filter: "url(#glow-sm)", textColor: "#e6edf3" };
+    return         { fill: "#0d2010", stroke: "#3fb950", sw: 1.5, filter: "url(#glow-sm)",    textColor: "#e6edf3" };
   }
 
   if (node.monitored) {
-    return { fill: "#0d1831", stroke: "#1f4788", sw: 1.5, filter: null };
+    return { fill: "#0d1831", stroke: "#1f4788", sw: 1.5, filter: null, textColor: "#6e7681" };
   }
 
-  return { fill: "#161b22", stroke: "#30363d", sw: 1.5, filter: null };
+  return { fill: "#161b22", stroke: "#30363d", sw: 1.5, filter: null, textColor: "#6e7681" };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ function PulseRing({ nodeId, flight }) {
 function PacketDot({ flightEdges, phase, durationMs, error }) {
   if (phase !== "flying") return null;
   const color = error ? "#f85149" : "#58a6ff";
-  const glowFilter = error ? "url(#glow-red)" : "url(#glow-blue)";
+  const glowFilter = "url(#glow)";
 
   return flightEdges.map((edgeId, i) => {
     const edge = EDGES.find((e) => e[2] === edgeId);
@@ -159,21 +159,13 @@ export default function ArchDiagram({ flight, metrics }) {
             <circle cx="11" cy="11" r="0.85" fill="#21262d" />
           </pattern>
 
-          {/* Glow filters */}
-          <filter id="glow-blue" x="-60%" y="-60%" width="220%" height="220%">
+          {/* Glow filters — colour comes from SourceGraphic, blur creates the halo */}
+          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <filter id="glow-green" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="glow-red" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="glow-yellow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+          <filter id="glow-sm" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="blur-corona" x="-150%" y="-150%" width="400%" height="400%">
@@ -210,7 +202,7 @@ export default function ArchDiagram({ flight, metrics }) {
               strokeWidth={active ? 2.5 : 1.5}
               strokeDasharray={active ? "6 3" : "none"}
               markerEnd={active ? "url(#arr-on)" : "url(#arr-off)"}
-              filter={active ? "url(#glow-blue)" : undefined}
+              filter={active ? "url(#glow)" : undefined}
               style={active ? { animation: "march 0.4s linear infinite" } : {}}
             />
           );
@@ -232,7 +224,7 @@ export default function ArchDiagram({ flight, metrics }) {
 
         {/* Nodes */}
         {Object.entries(NODES).map(([id, node]) => {
-          const { fill, stroke, sw, filter } = nodeStyle(id, flight, metrics);
+          const { fill, stroke, sw, filter, textColor } = nodeStyle(id, flight, metrics);
           const isReceived = flight?.dest === id && flight?.phase === "received";
           return (
             <g key={id}>
@@ -263,7 +255,7 @@ export default function ArchDiagram({ flight, metrics }) {
                 textAnchor="middle"
                 fontSize={10.5}
                 fontWeight={600}
-                fill={fill === "#161b22" || fill === "#0d1831" ? "#8b949e" : "#e6edf3"}
+                fill={textColor}
                 fontFamily="system-ui, -apple-system, sans-serif"
               >
                 {node.label}

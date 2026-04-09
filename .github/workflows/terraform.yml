@@ -134,11 +134,12 @@ jobs:
 
   deploy-images:
     name: Deploy images (${{ inputs.environment }})
-    # Always declare needs so full-deploy waits for infra. When step=images-only
-    # the apply job is skipped — GitHub marks it 'skipped', not 'failed', so the
-    # result check below still allows deploy-images to proceed.
+    # needs: [apply] ensures full-deploy waits for infra before deploying images.
+    # always() forces GitHub to evaluate the if condition even when apply was
+    # skipped (images-only), preventing automatic skip-propagation from needs.
     needs: [apply]
-    if: |
+    if: >-
+      always() &&
       github.event_name == 'workflow_dispatch' &&
       (inputs.step == 'images-only' || inputs.step == 'full-deploy') &&
       (needs.apply.result == 'success' || needs.apply.result == 'skipped')
