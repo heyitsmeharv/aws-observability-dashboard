@@ -53,14 +53,13 @@ locals {
     { name = "OTEL_LOGS_EXPORTER", value = "none" },
     { name = "OTEL_METRICS_EXPORTER", value = "none" },
     { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4316" },
-    { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://localhost:4316/v1/traces" },
+    { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4316/v1/traces" },
     { name = "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", value = "true" },
-    { name = "OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT", value = "http://localhost:4316/v1/metrics" },
+    { name = "OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT", value = "http://127.0.0.1:4316/v1/metrics" },
     { name = "OTEL_TRACES_SAMPLER", value = "xray" },
-    { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://localhost:2000" },
+    { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://127.0.0.1:2000" },
     { name = "OTEL_PROPAGATORS", value = "tracecontext,baggage,b3,xray" },
-    { name = "NODE_OPTIONS", value = "--import @aws/aws-distro-opentelemetry-node-autoinstrumentation/register --experimental-loader=@opentelemetry/instrumentation/hook.mjs" },
+    { name = "NODE_OPTIONS", value = "--require @aws/aws-distro-opentelemetry-node-autoinstrumentation/register" },
   ] : [])
 
   backend_container_definitions = concat([
@@ -697,6 +696,7 @@ resource "aws_launch_template" "ecs_instance" {
     echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
     echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
     echo ECS_ENABLE_TASK_ENI=true >> /etc/ecs/ecs.config
+    echo ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true >> /etc/ecs/ecs.config
   EOF
   )
 

@@ -23,7 +23,7 @@ The `examples/react-node-demo` app is a realistic ECS target used to prove the p
 
 | Dimension   | Supported shape                                      |
 |-------------|------------------------------------------------------|
-| Compute     | ECS with the EC2 launch type                         |
+| Compute     | ECS with the EC2 or Fargate launch type              |
 | Front door  | Application Load Balancer (ALB)                      |
 | Logging     | Structured JSON logs to CloudWatch Logs              |
 | Metrics     | CloudWatch Container Insights (enabled on cluster)   |
@@ -40,7 +40,10 @@ infra/modules/
 ├── core_logs_insights/     10 saved Logs Insights query definitions
 └── adapters/
     ├── platform_service/   Recommended public adapter for platform teams
-    └── ecs_service/        Lower-level ECS+ALB adapter used by platform_service
+    ├── ecs_ec2_alb/        Internal ECS-on-EC2 wrapper used by platform_service
+    ├── ecs_fargate_alb/    Internal Fargate wrapper used by platform_service
+    ├── ec2_alb/            Future EC2 adapter scaffold
+    └── ecs_service/        Lower-level ECS+ALB adapter used by the wrappers
 
 examples/
 └── react-node-demo/
@@ -68,13 +71,17 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name             = "my-app"
-    environment      = "production"
-    region           = "eu-west-2"
-    kind             = "ecs_fargate_alb"
-    alb_arn          = var.alb_arn
-    target_group_arn = var.target_group_arn
-    log_group_names  = ["/ecs/my-app/production"]
+    name        = "my-app"
+    environment = "production"
+    region      = "eu-west-2"
+    kind        = "ecs_fargate_alb"
+    ingress = {
+      alb_arn          = var.alb_arn
+      target_group_arn = var.target_group_arn
+      public_base_url  = "https://my-app.example.com"
+      api_health_url   = "https://my-app.example.com/health"
+    }
+    log_group_names = ["/ecs/my-app/production"]
     ecs = {
       cluster_arn        = var.ecs_cluster_arn
       service_arn        = var.ecs_service_arn
@@ -93,8 +100,6 @@ module "observability" {
   # Optional: outside-in synthetic monitoring
   canaries = {
     enabled               = true
-    frontend_url          = "https://my-app.example.com"
-    api_endpoint          = "https://my-app.example.com/health"
     artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
   }
 
@@ -117,7 +122,7 @@ The `examples/react-node-demo` directory deploys a complete ECS stack — React 
 
 Use this demo when you want a realistic workload plus a separate UI that helps generate traffic and validate the package behaviour. It is a companion test harness for the module, not a runtime dependency for consumers.
 
-The sandbox demo enables Application Signals tracing by default. It does this with OpenTelemetry auto-instrumentation inside the Node backend container and a CloudWatch agent sidecar in the same ECS task.
+The sandbox demo enables Application Signals tracing by default. It does this with ADOT auto-instrumentation inside the Node backend container and a CloudWatch agent sidecar in the same ECS task. The demo backend intentionally uses CommonJS because AWS currently recommends that over ESM for Application Signals.
 
 See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for step-by-step instructions.
 
@@ -146,13 +151,13 @@ Dashboards, alarms, Logs Insights, and canaries around existing AWS resources. T
 
 ### Level 2 — Application Signals (requires app instrumentation)
 
-For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module exposes trace drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none. The demo stack includes a working reference implementation using ADOT auto-instrumentation for the backend container plus a CloudWatch agent sidecar in the same ECS task.
+For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module exposes trace drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none. The demo stack includes a working reference implementation using ADOT auto-instrumentation for the backend container plus a CloudWatch agent sidecar in the same ECS task, and keeps the backend on CommonJS because AWS documents Node ESM support as limited.
 
 ---
 
 ## Honest limitations
 
-- v1 supports two workload attachment patterns: ECS on EC2 behind an ALB and ECS on Fargate behind an ALB. Lambda and API Gateway adapters are planned for later versions.
+- v1 supports two implemented workload attachment patterns: ECS on EC2 behind an ALB and ECS on Fargate behind an ALB. The `ec2_alb` public contract is scaffolded for a future adapter, but compute-specific EC2 alarms and dashboards are not implemented yet.
 - For Application Signals and service maps, the target application must install and configure the CloudWatch agent and ADOT. The package standardises the observability layer but cannot invent tracing data for arbitrary existing services it does not own.
 - For ECS and Fargate tracing, the supported collector pattern is a task sidecar. Daemon mode is intentionally out of scope for v1.
 - Cross-account observability (CloudWatch OAM) is explicitly out of scope for v1.
