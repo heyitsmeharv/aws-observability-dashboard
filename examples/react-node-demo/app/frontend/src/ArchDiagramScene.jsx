@@ -1,5 +1,5 @@
-const W = 980;
-const H = 420;
+const W = 1140;
+const H = 500;
 const NODE_W = 164;
 const NODE_H = 72;
 const ICON_SIZE = 30;
@@ -22,16 +22,16 @@ const COLORS = {
 
 const NODES = {
   browser: {
-    x: 24,
-    y: 160,
+    x: 28,
+    y: 182,
     label: "Browser",
     sublabel: "User traffic",
     icon: "browser",
     tone: "#6e7681",
   },
   canary: {
-    x: 196,
-    y: 36,
+    x: 226,
+    y: 34,
     label: "Synthetics",
     sublabel: "Frontend + API probes",
     icon: "canary",
@@ -40,16 +40,16 @@ const NODES = {
     tag: "pkg",
   },
   cloudfront: {
-    x: 196,
-    y: 160,
+    x: 226,
+    y: 182,
     label: "CloudFront",
     sublabel: "CDN edge",
     icon: "cloudfront",
     tone: "#8f63ff",
   },
   alb: {
-    x: 368,
-    y: 160,
+    x: 448,
+    y: 182,
     label: "ALB",
     sublabel: "Front door metrics",
     icon: "alb",
@@ -57,8 +57,8 @@ const NODES = {
     monitored: true,
   },
   backend: {
-    x: 540,
-    y: 160,
+    x: 670,
+    y: 182,
     label: "ECS Service",
     sublabel: "App container",
     icon: "ecs",
@@ -66,8 +66,8 @@ const NODES = {
     monitored: true,
   },
   sidecar: {
-    x: 736,
-    y: 232,
+    x: 866,
+    y: 274,
     w: 128,
     h: 42,
     iconSize: 30,
@@ -79,16 +79,16 @@ const NODES = {
     monitored: true,
   },
   downstream: {
-    x: 712,
-    y: 160,
+    x: 948,
+    y: 182,
     label: "Dependency",
     sublabel: "External call path",
     icon: "dependency",
     tone: "#8b949e",
   },
   alarms: {
-    x: 712,
-    y: 36,
+    x: 922,
+    y: 34,
     label: "Alarms",
     sublabel: "ALB + ECS + canary",
     icon: "alarms",
@@ -97,8 +97,8 @@ const NODES = {
     tag: "pkg",
   },
   dashboard: {
-    x: 368,
-    y: 320,
+    x: 338,
+    y: 362,
     label: "Dashboard",
     sublabel: "Operator home",
     icon: "dashboard",
@@ -107,8 +107,8 @@ const NODES = {
     tag: "pkg",
   },
   logs: {
-    x: 540,
-    y: 320,
+    x: 586,
+    y: 362,
     label: "Logs Insights",
     sublabel: "10 saved queries",
     icon: "logs",
@@ -117,8 +117,8 @@ const NODES = {
     tag: "pkg",
   },
   otel: {
-    x: 712,
-    y: 320,
+    x: 834,
+    y: 362,
     label: "OpenTelemetry",
     sublabel: "Application Signals",
     icon: "otel",
@@ -167,12 +167,12 @@ const EDGES = [
   { id: "e-cf-al", d: linePath("cloudfront", "right", "alb", "left") },
   { id: "e-al-be", d: linePath("alb", "right", "backend", "left") },
   { id: "e-be-ds", d: linePath("backend", "right", "downstream", "left") },
-  { id: "e-ca-cf", d: curvePath("canary", "bottom", "cloudfront", "top", 0, 54, 0, -42) },
+  { id: "e-ca-cf", d: curvePath("canary", "bottom", "cloudfront", "top", 0, 64, 0, -52) },
   { id: "e-ca-ar", d: linePath("canary", "right", "alarms", "left") },
-  { id: "e-al-ar", d: curvePath("alb", "top", "alarms", "left", 0, -56, -46, 0) },
-  { id: "e-ar-da", d: curvePath("alarms", "bottom", "dashboard", "right", 0, 84, 44, -10) },
-  { id: "e-al-da", d: curvePath("alb", "bottom", "dashboard", "top", 0, 68, 0, -54) },
-  { id: "e-be-lo", d: curvePath("backend", "bottom", "logs", "top", 0, 68, 0, -54) },
+  { id: "e-al-ar", d: curvePath("alb", "top", "alarms", "left", 0, -78, -64, 0) },
+  { id: "e-ar-da", d: curvePath("alarms", "bottom", "dashboard", "right", 0, 112, 54, -18) },
+  { id: "e-al-da", d: curvePath("alb", "bottom", "dashboard", "top", 0, 92, 0, -72) },
+  { id: "e-be-lo", d: curvePath("backend", "bottom", "logs", "top", 0, 92, 0, -72) },
   { id: "e-lo-da", d: linePath("logs", "left", "dashboard", "right") },
   { id: "e-be-sc", d: linePath("backend", "right", "sidecar", "left") },
   { id: "e-sc-ot", d: linePath("sidecar", "bottom", "otel", "top") },
@@ -754,13 +754,13 @@ export default function ArchDiagramScene({ flight, metrics }) {
         <rect width={W} height={H} rx="16" fill={COLORS.bg} />
         <rect width={W} height={H} rx="16" fill="url(#dot-grid)" opacity="0.72" />
 
-        <text x="10" y="26" fill="#8b949e" fontSize="11" fontWeight="700" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">
+        <text x="12" y="28" fill="#8b949e" fontSize="11" fontWeight="700" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">
           WORKLOAD PATH
         </text>
-        <text x="10" y="296" fill="#8b949e" fontSize="11" fontWeight="700" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">
+        <text x="12" y="338" fill="#8b949e" fontSize="11" fontWeight="700" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">
           PACKAGE SURFACE
         </text>
-        <path d="M 12 282 L 968 282" stroke="#20262d" strokeWidth="1" strokeDasharray="4 8" />
+        <path d={`M 12 324 L ${W - 12} 324`} stroke="#20262d" strokeWidth="1" strokeDasharray="4 8" />
 
         {EDGES.map((edge) => {
           const visual = edgeVisual(edge.id, flight, metrics);

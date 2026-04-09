@@ -100,10 +100,10 @@ locals {
         { containerPort = 4316, hostPort = 4316, protocol = "tcp" },
         { containerPort = 2000, hostPort = 2000, protocol = "tcp" },
       ]
-      secrets = [
+      environment = [
         {
-          name      = "CW_CONFIG_CONTENT"
-          valueFrom = aws_ssm_parameter.cwagent_config[0].arn
+          name  = "CW_CONFIG_CONTENT"
+          value = local.cwagent_config_content
         }
       ]
       logConfiguration = {
@@ -169,16 +169,6 @@ resource "aws_cloudwatch_log_group" "cwagent" {
 
   name              = "/ecs/${local.name_prefix}/cwagent"
   retention_in_days = 30
-
-  tags = local.common_tags
-}
-
-resource "aws_ssm_parameter" "cwagent_config" {
-  count = var.enable_tracing ? 1 : 0
-
-  name  = "/${var.project}/${var.environment}/observability/cwagent-config"
-  type  = "String"
-  value = local.cwagent_config_content
 
   tags = local.common_tags
 }
@@ -587,25 +577,6 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy" "task_execution_ssm" {
-  count = var.enable_tracing ? 1 : 0
-
-  name = "${local.name_prefix}-task-execution-ssm"
-  role = aws_iam_role.task_execution.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-      ]
-      Resource = aws_ssm_parameter.cwagent_config[0].arn
-    }]
-  })
-}
-
 resource "aws_iam_role_policy_attachment" "backend_task_cloudwatch_agent" {
   count = var.enable_tracing ? 1 : 0
 
@@ -814,7 +785,6 @@ resource "aws_ecs_service" "backend" {
   depends_on = [
     aws_lb_listener.http,
     aws_iam_role_policy_attachment.task_execution,
-    aws_iam_role_policy.task_execution_ssm,
     aws_iam_role_policy_attachment.backend_task_cloudwatch_agent,
     aws_vpc_endpoint.cloudwatch_monitoring,
     aws_vpc_endpoint.xray,
