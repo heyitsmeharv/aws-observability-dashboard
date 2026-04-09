@@ -100,7 +100,7 @@ The package itself creates CloudWatch resources:
 - Logs Insights saved queries
 - Optional Synthetics canaries
 
-It also exposes tracing drilldowns when you enable the `tracing` block, and it can turn on active tracing for canaries. For arbitrary existing ECS workloads, it does not instrument the target application for you or provision a separate bespoke operator UI. The demo stack is the exception because it owns the ECS task definition and host fleet, so it can wire a CloudWatch agent daemon plus Node.js OpenTelemetry auto-instrumentation. If you want a richer custom frontend for demos or internal validation, that UI should sit alongside the package and read from the signals the package creates.
+It also exposes tracing drilldowns when you enable the `tracing` block, and it can turn on active tracing for canaries. For arbitrary existing ECS workloads, it does not instrument the target application for you or provision a separate bespoke operator UI. The demo stack is the exception because it owns the ECS task definition, so it can wire a CloudWatch agent sidecar plus Node.js OpenTelemetry auto-instrumentation inside the same task. If you want a richer custom frontend for demos or internal validation, that UI should sit alongside the package and read from the signals the package creates.
 
 The `examples/react-node-demo` frontend is one example of that companion layer. It is useful for testing and showcasing the module, but teams onboarding the package to an existing AWS account do not need to deploy it.
 
@@ -116,11 +116,11 @@ The core modules observe the AWS infrastructure layer: ALB metrics, ECS service 
 
 For service maps, distributed traces, and correlated service-level views, the target application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). This requires:
 
-1. Installing the CloudWatch agent on ECS instances with a daemon task
+1. Running the CloudWatch agent as a sidecar in the ECS or Fargate task
 2. Configuring the ADOT collector for the application
 3. Instrumenting the application code with OpenTelemetry
 
-This package cannot generate trace data if the application emits none. Level 2 is explicitly optional for v1, and the package currently helps with trace drilldown rather than managed application instrumentation for arbitrary existing services.
+This package cannot generate trace data if the application emits none. Level 2 is explicitly optional for v1, and the package currently helps with trace drilldown rather than managed application instrumentation for arbitrary existing services. For ECS and Fargate, daemon-based collectors are intentionally out of scope.
 
 ---
 
