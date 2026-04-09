@@ -23,6 +23,14 @@ locals {
     Project     = var.project
     Environment = var.environment
   }
+
+  tracing_service_name = "${local.name_prefix}-backend"
+
+  otel_resource_attributes = join(",", compact([
+    "service.name=${local.tracing_service_name}",
+    "deployment.environment=${var.environment}",
+    "aws.log.group.names=${aws_cloudwatch_log_group.backend.name}",
+  ]))
 }
 
 data "aws_caller_identity" "current" {}
@@ -67,6 +75,31 @@ resource "aws_ecr_repository" "backend" {
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ecs/${local.name_prefix}/backend"
   retention_in_days = 30
+
+  tags = local.common_tags
+}
+
+resource "aws_cloudwatch_log_group" "cwagent" {
+  count = var.enable_tracing ? 1 : 0
+
+  name              = "/ecs/${local.name_prefix}/cwagent"
+  retention_in_days = 30
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "cwagent_config" {
+  count = var.enable_tracing ? 1 : 0
+
+  name = "/${var.project}/${var.environment}/observability/cwagent-config"
+  type = "String"
+  value = jsonencode({
+    traces = {
+      traces_collected = {
+        application_signals = {}
+      }
+    }
+  })
 
   tags = local.common_tags
 }
@@ -368,9 +401,33 @@ resource "aws_iam_role" "task_execution" {
   tags = local.common_tags
 }
 
+resource "aws_iam_role" "cwagent_task" {
+  count = var.enable_tracing ? 1 : 0
+
+  name = "${local.name_prefix}-cwagent-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = local.common_tags
+}
+
 resource "aws_iam_role_policy_attachment" "task_execution" {
   role       = aws_iam_role.task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "cwagent_server" {
+  count = var.enable_tracing ? 1 : 0
+
+  role       = aws_iam_role.cwagent_task[0].name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 # ── ALB ───────────────────────────────────────────────────────────────────────
@@ -526,6 +583,64 @@ resource "aws_ecs_capacity_provider" "demo" {
 
 # ── ECS task definition ───────────────────────────────────────────────────────
 
+resource "aws_ecs_task_definition" "cwagent" {
+  count = var.enable_tracing ? 1 : 0
+
+  family                   = "${local.name_prefix}-cwagent"
+  network_mode             = "bridge"
+  requires_compatibilities = ["EC2"]
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.cwagent_task[0].arn
+  cpu                      = 128
+  memory                   = 128
+  tags                     = local.common_tags
+
+  container_definitions = jsonencode([
+    {
+      name      = "cloudwatch-agent"
+      image     = "public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest"
+      essential = true
+
+      portMappings = [
+        { containerPort = 4316, hostPort = 4316, protocol = "tcp" },
+        { containerPort = 2000, hostPort = 2000, protocol = "tcp" },
+      ]
+
+      secrets = [
+        {
+          name      = "CW_CONFIG_CONTENT"
+          valueFrom = aws_ssm_parameter.cwagent_config[0].arn
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.cwagent[0].name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "cwagent"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "cwagent" {
+  count = var.enable_tracing ? 1 : 0
+
+  name                = "${local.name_prefix}-cwagent"
+  cluster             = aws_ecs_cluster.demo.id
+  task_definition     = aws_ecs_task_definition.cwagent[0].arn
+  launch_type         = "EC2"
+  scheduling_strategy = "DAEMON"
+  tags                = local.common_tags
+
+  depends_on = [
+    aws_iam_role_policy_attachment.task_execution,
+    aws_iam_role_policy_attachment.cwagent_server,
+  ]
+}
+
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${local.name_prefix}-backend"
   network_mode             = "bridge"
@@ -547,10 +662,18 @@ resource "aws_ecs_task_definition" "backend" {
         { containerPort = 4000, hostPort = 0, protocol = "tcp" }
       ]
 
-      environment = [
+      environment = concat([
         { name = "NODE_ENV", value = var.environment },
         { name = "PORT", value = "4000" },
-      ]
+        ], var.enable_tracing ? [
+        { name = "OTEL_RESOURCE_ATTRIBUTES", value = local.otel_resource_attributes },
+        { name = "OTEL_LOGS_EXPORTER", value = "none" },
+        { name = "OTEL_METRICS_EXPORTER", value = "none" },
+        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+        { name = "OTEL_AWS_APPLICATION_SIGNALS_ENABLED", value = "true" },
+        { name = "OTEL_TRACES_SAMPLER", value = "xray" },
+        { name = "NODE_OPTIONS", value = "--import @aws/aws-distro-opentelemetry-node-autoinstrumentation/register --experimental-loader=@opentelemetry/instrumentation/hook.mjs" },
+      ] : [])
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -584,7 +707,11 @@ resource "aws_ecs_service" "backend" {
     container_port   = 4000
   }
 
-  depends_on = [aws_lb_listener.http, aws_iam_role_policy_attachment.task_execution]
+  depends_on = [
+    aws_lb_listener.http,
+    aws_iam_role_policy_attachment.task_execution,
+    aws_ecs_service.cwagent,
+  ]
 
   lifecycle {
     ignore_changes = [task_definition, desired_count]
@@ -601,8 +728,7 @@ module "observability" {
     environment      = var.environment
     region           = var.aws_region
     kind             = "ecs_ec2_alb"
-    ecs_cluster_name = aws_ecs_cluster.demo.name
-    ecs_service_name = aws_ecs_service.backend.name
+    ecs_service_arn  = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.demo.name}/${aws_ecs_service.backend.name}"
     alb_arn          = aws_lb.demo.arn
     target_group_arn = aws_lb_target_group.backend.arn
   }
@@ -627,7 +753,9 @@ module "observability" {
   }
 
   tracing = {
-    enabled = var.enable_canaries
+    enabled               = var.enable_tracing
+    service_name          = local.tracing_service_name
+    enable_canary_tracing = var.enable_tracing && var.enable_canaries
   }
 
   depends_on = [

@@ -1,12 +1,12 @@
 # aws-observability-dashboard
 
-A reusable Terraform module set that attaches standardised CloudWatch observability to an AWS workload — dashboards, alarms, Logs Insights queries, and synthetic monitoring from a small set of workload inputs.
+A reusable Terraform module set that attaches standardised CloudWatch observability to an AWS workload — dashboards, alarms, Logs Insights queries, and synthetic monitoring from a small set of workload ARNs and log inputs.
 
 ---
 
 ## What this is
 
-Point it at your ECS service and ALB, and it generates the core observability package around them:
+Point it at your existing ECS service, ALB, target group, and log groups, and it generates the core observability package around them:
 
 - **1 CloudWatch dashboard** — overview, service detail, operations, and log analysis sections in a single view
 - **7+ CloudWatch alarms** — ALB front-door errors and latency, ECS health, canary failures
@@ -68,14 +68,13 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name             = "my-app"
-    environment      = "production"
-    region           = "eu-west-2"
-    kind             = "ecs_ec2_alb"
-    ecs_cluster_name = "my-cluster"
-    ecs_service_name = "my-service"
-    alb_arn          = aws_lb.main.arn
-    target_group_arn = aws_lb_target_group.main.arn
+    name            = "my-app"
+    environment     = "production"
+    region          = "eu-west-2"
+    kind            = "ecs_ec2_alb"
+    ecs_service_arn = var.ecs_service_arn
+    alb_arn         = var.alb_arn
+    target_group_arn = var.target_group_arn
   }
 
   logging = {
@@ -98,8 +97,8 @@ module "observability" {
     artifacts_bucket_name = aws_s3_bucket.canary_artifacts.bucket
   }
 
-  # Optional: X-Ray drilldowns and canary active tracing.
-  # The workload still needs external tracing instrumentation.
+  # Optional: OpenTelemetry/Application Signals drilldowns.
+  # Existing workloads still need their own runtime instrumentation.
   tracing = {
     enabled = true
   }
@@ -115,6 +114,8 @@ See [docs/integration-guide.md](docs/integration-guide.md) for the full contract
 The `examples/react-node-demo` directory deploys a complete ECS stack — React frontend, Node API, ALB — and wires the observability package against it.
 
 Use this demo when you want a realistic workload plus a separate UI that helps generate traffic and validate the package behaviour. It is a companion test harness for the module, not a runtime dependency for consumers.
+
+The sandbox demo enables Application Signals tracing by default. It does this with OpenTelemetry auto-instrumentation inside the Node backend container and a CloudWatch agent daemon service running on the ECS EC2 hosts.
 
 See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for step-by-step instructions.
 
@@ -143,14 +144,14 @@ Dashboards, alarms, Logs Insights, and canaries around existing AWS resources. T
 
 ### Level 2 — Application Signals (requires app instrumentation)
 
-For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module now exposes X-Ray drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none.
+For service maps, distributed traces, and correlated service-level views, the application must be onboarded to [AWS Application Signals on ECS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html). The module exposes trace drilldown links and can enable active tracing for canaries, but it still cannot generate service trace data if the workload emits none. The demo stack includes a working reference implementation using ADOT auto-instrumentation for the backend container plus a CloudWatch agent daemon on the ECS hosts.
 
 ---
 
 ## Honest limitations
 
 - v1 supports one workload pattern: ECS on EC2 behind an ALB. Lambda, API Gateway, and Fargate adapters are planned for later versions.
-- For Application Signals and service maps, the target application must install and configure the CloudWatch agent and ADOT. The package standardises the observability layer but cannot invent tracing data.
+- For Application Signals and service maps, the target application must install and configure the CloudWatch agent and ADOT. The package standardises the observability layer but cannot invent tracing data for arbitrary existing services it does not own.
 - Cross-account observability (CloudWatch OAM) is explicitly out of scope for v1.
 
 ---

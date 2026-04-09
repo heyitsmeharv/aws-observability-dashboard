@@ -12,5 +12,6 @@ module "demo" {
   max_capacity     = var.demo_max_capacity
 
   enable_canaries  = var.demo_enable_canaries
+  enable_tracing   = var.demo_enable_tracing
   create_sns_topic = var.demo_create_sns_topic
 }

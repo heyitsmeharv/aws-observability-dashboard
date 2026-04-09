@@ -66,6 +66,12 @@ variable "enable_canaries" {
   default     = false
 }
 
+variable "enable_tracing" {
+  type        = bool
+  description = "Enable OpenTelemetry/Application Signals for the demo backend and CloudWatch daemon on the ECS hosts."
+  default     = true
+}
+
 variable "create_sns_topic" {
   type        = bool
   description = "Create an SNS topic for alarm notifications."

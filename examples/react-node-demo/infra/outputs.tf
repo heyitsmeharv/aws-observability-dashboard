@@ -51,6 +51,16 @@ output "alarm_names" {
   value       = module.observability.alarm_names
 }
 
+output "trace_map_url" {
+  description = "Trace map URL for the demo backend. Null when tracing is disabled."
+  value       = module.observability.xray_trace_map_url
+}
+
+output "trace_details_url" {
+  description = "Trace details URL for the demo backend. Null when tracing is disabled."
+  value       = module.observability.xray_traces_url
+}
+
 output "log_group_names" {
   description = "CloudWatch log group names for the demo services."
   value       = [aws_cloudwatch_log_group.backend.name]

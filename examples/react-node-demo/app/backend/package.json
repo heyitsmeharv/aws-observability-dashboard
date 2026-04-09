@@ -10,6 +10,8 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
+    "@aws/aws-distro-opentelemetry-node-autoinstrumentation": "0.7.0",
+    "@opentelemetry/instrumentation": "0.54.0",
     "express": "^4.19.2"
   }
 }

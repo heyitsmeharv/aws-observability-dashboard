@@ -130,13 +130,13 @@ variable "runbook_url" {
 
 variable "tracing_enabled" {
   type        = bool
-  description = "When true, adds X-Ray tracing drilldowns to outputs and the CloudWatch dashboard."
+  description = "When true, adds trace drilldowns to outputs and the CloudWatch dashboard."
   default     = false
 }
 
 variable "tracing_service_name" {
   type        = string
-  description = "Tracing service name used for X-Ray/Application Signals drilldowns."
+  description = "Tracing service name used for Application Signals and trace drilldowns."
   default     = null
 
   validation {
@@ -262,6 +262,6 @@ variable "canary_schedule_expression" {
 
 variable "enable_canary_active_tracing" {
   type        = bool
-  description = "When true, enables active X-Ray tracing for CloudWatch Synthetics canaries."
+  description = "When true, enables active tracing for CloudWatch Synthetics canaries."
   default     = false
 }

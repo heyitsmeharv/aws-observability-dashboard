@@ -338,7 +338,7 @@ export default function App() {
           label="Package surface"
           value="5"
           accent="#bc8cff"
-          note="dashboard + alarms + logs + canaries + traces"
+          note="dashboard + alarms + logs + canaries + app signals"
         />
       </div>
 

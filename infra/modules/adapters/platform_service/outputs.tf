@@ -24,17 +24,17 @@ output "dashboard_url" {
 }
 
 output "tracing_service_name" {
-  description = "Tracing service name used for X-Ray/Application Signals drilldowns. Null when tracing is disabled."
+  description = "Tracing service name used for Application Signals and trace drilldowns. Null when tracing is disabled."
   value       = module.observability.tracing_service_name
 }
 
 output "xray_trace_map_url" {
-  description = "AWS X-Ray trace map URL. Null when tracing is disabled."
+  description = "Trace map console URL. Null when tracing is disabled."
   value       = module.observability.xray_trace_map_url
 }
 
 output "xray_traces_url" {
-  description = "AWS X-Ray traces URL filtered to the tracing service. Null when tracing is disabled."
+  description = "Trace console URL filtered to the tracing service. Null when tracing is disabled."
   value       = module.observability.xray_traces_url
 }
 

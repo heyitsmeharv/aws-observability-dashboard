@@ -54,6 +54,7 @@ This creates:
 - VPC (uses your account's default VPC)
 - ECR repositories for frontend and backend
 - ECS cluster (EC2 launch type, Container Insights enabled)
+- CloudWatch agent daemon service for Application Signals when tracing is enabled
 - ALB with path-based routing
 - ECS task definitions and services
 - CloudWatch log groups
@@ -155,6 +156,8 @@ for i in $(seq 1 15); do curl -s "http://${ALB_DNS}/api/fail" > /dev/null; done
 for i in $(seq 1 10); do curl -s "http://${ALB_DNS}/api/dependency" > /dev/null; done
 ```
 
+If `enable_tracing` is on, the dependency traffic above also generates Application Signals traces for the backend service.
+
 ---
 
 ## Step 8 — Inspect the dashboard
@@ -181,7 +184,13 @@ Your saved queries appear under `obs-demo/sandbox/`. Run:
 
 ---
 
-## Step 10 — Enable canaries (optional)
+## Step 10 — Inspect Application Signals (optional)
+
+If tracing is enabled, open **CloudWatch → Application Signals** or use the trace URLs from Terraform outputs. After hitting `/api/dependency`, you should see the backend service emit traces and dependency activity.
+
+---
+
+## Step 11 — Enable canaries (optional)
 
 ```bash
 # Re-apply with canaries enabled
