@@ -47,17 +47,18 @@ module "observability" {
   source = "github.com/your-org/aws-observability-dashboard//infra/modules/adapters/platform_service"
 
   service = {
-    name            = "my-app"
-    environment     = "production"
-    region          = "eu-west-2"
-    kind            = "ecs_ec2_alb"
-    ecs_service_arn = var.ecs_service_arn
-    alb_arn         = var.alb_arn
+    name             = "my-app"
+    environment      = "production"
+    region           = "eu-west-2"
+    kind             = "ecs_fargate_alb"
+    alb_arn          = var.alb_arn
     target_group_arn = var.target_group_arn
-  }
-
-  logging = {
-    log_group_names = ["/ecs/my-app/production"]
+    log_group_names  = ["/ecs/my-app/production"]
+    ecs = {
+      cluster_arn        = var.ecs_cluster_arn
+      service_arn        = var.ecs_service_arn
+      app_container_name = "api"
+    }
   }
 
   dashboard = {
@@ -78,6 +79,7 @@ module "observability" {
 
   tracing = {
     enabled = true
+    mode    = "managed"
   }
 }
 ```
@@ -86,7 +88,7 @@ module "observability" {
 
 ## Onboarding an existing service
 
-The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services. The recommended public contract is ARN-first: pass the ECS service ARN, ALB ARN, target group ARN, and log groups, and let the module derive the CloudWatch dimensions internally.
+The intended integration path is to point the module at AWS resources that already exist. The module does not take ownership of your ECS service or ALB. Instead, it attaches a standard observability layer around them by creating new CloudWatch resources that reference those services. The recommended public contract is ARN-first: pass the ECS cluster/service ARNs, ALB ARN, target group ARN, and log groups inside the `service` object, and let the module derive the CloudWatch dimensions internally.
 
 In v1, that means:
 
@@ -108,21 +110,29 @@ If you also have a separate internal UI or demo dashboard, treat that as a consu
 | `name`                 | string | Service/project name used in resource naming |
 | `environment`          | string | Environment name such as `sandbox`, `staging`, or `production` |
 | `region`               | string | AWS region |
-| `kind`                 | string | Workload shape. v1 supports `ecs_ec2_alb` |
-| `ecs_service_arn`      | string | Recommended public attachment point. The module derives cluster and service names from this ARN |
-| `ecs_cluster_name`     | string | Optional compatibility input when you are not passing `ecs_service_arn` |
-| `ecs_service_name`     | string | Optional compatibility input when you are not passing `ecs_service_arn` |
+| `kind`                 | string | Workload shape. v1 supports `ecs_ec2_alb` and `ecs_fargate_alb` |
 | `alb_arn`              | string | Full ALB ARN |
 | `target_group_arn`     | string | Full target group ARN |
+| `log_group_names`      | list(string) | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry |
+| `ecs.cluster_arn`      | string | Optional ECS cluster ARN. Used to resolve the cluster name when supplied |
+| `ecs.service_arn`      | string | Recommended public attachment point. The module derives cluster and service names from this ARN |
+| `ecs.app_container_name` | string | Required when `tracing.mode = "managed"` so the owning stack can identify the app container |
 
-Provide either `ecs_service_arn` or both `ecs_cluster_name` and `ecs_service_name`.
+Legacy compatibility inputs remain accepted for now:
 
-### `logging` (required)
+| Field                  | Type   | Description |
+|------------------------|--------|-------------|
+| `ecs_service_arn`      | string | Legacy public attachment point. Prefer `service.ecs.service_arn` |
+| `ecs_cluster_name`     | string | Legacy compatibility input when you are not passing an ECS service ARN |
+| `ecs_service_name`     | string | Legacy compatibility input when you are not passing an ECS service ARN |
 
-| Field             | Type         | Description |
-|-------------------|--------------|-------------|
-| `log_group_names` | list(string) | CloudWatch log group names. Saved queries use the full list; embedded dashboard log widgets use the first entry |
-| `fields`          | object       | Optional field mappings when your logs do not use the default names |
+### `logging` (optional)
+
+| Field      | Type   | Description |
+|------------|--------|-------------|
+| `fields`   | object | Optional field mappings when your logs do not use the default names |
+
+`service.log_group_names` is the recommended public input. `logging.log_group_names` remains accepted as a temporary compatibility fallback.
 
 Default log field mappings:
 
@@ -169,10 +179,11 @@ Default log field mappings:
 | Field                   | Default        | Description |
 |-------------------------|----------------|-------------|
 | `enabled`               | false          | Adds Application Signals / trace drilldowns to the dashboard and outputs |
+| `mode`                  | `external` when enabled, otherwise `off` | Use `external` for pre-instrumented workloads and `managed` when the surrounding stack owns workload instrumentation |
 | `service_name`          | `service.name` | Trace service name used for filtering and labels |
 | `enable_canary_tracing` | `enabled`      | Enables active tracing for CloudWatch Synthetics canaries |
 
-The reusable module only publishes tracing links and optional canary tracing. The monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent sidecar plus Node.js ESM auto-instrumentation.
+The reusable module publishes tracing links and optional canary tracing. `mode = "managed"` is the public contract flag to use when the surrounding stack owns workload instrumentation, as the sandbox demo does. For arbitrary existing services, the monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` shows one ECS EC2 reference setup using a CloudWatch agent sidecar plus Node.js ESM auto-instrumentation.
 
 ---
 
@@ -212,8 +223,12 @@ module.observability.api_canary_name
 If your service logs use different field names, you can override them without rewriting the built-in queries or dashboard widgets:
 
 ```hcl
-logging = {
+service = {
+  # ...
   log_group_names = ["/ecs/my-app/production"]
+}
+
+logging = {
   fields = {
     status_code = "httpStatus"
     latency_ms  = "latencyMs"

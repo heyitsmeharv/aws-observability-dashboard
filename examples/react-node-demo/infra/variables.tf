@@ -71,9 +71,3 @@ variable "enable_tracing" {
   description = "Enable OpenTelemetry/Application Signals for the demo backend using an in-task CloudWatch agent sidecar."
   default     = true
 }
-
-variable "create_sns_topic" {
-  type        = bool
-  description = "Create an SNS topic for alarm notifications."
-  default     = false
-}

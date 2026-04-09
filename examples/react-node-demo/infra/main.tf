@@ -626,7 +626,9 @@ resource "aws_lb" "demo" {
 }
 
 resource "aws_lb_target_group" "backend" {
-  name        = "${local.name_prefix}-backend"
+  # Use a generated target group name so Terraform can replace the target group
+  # safely when immutable attributes like target_type change.
+  name_prefix = substr(replace(local.name_prefix, "-", ""), 0, 6)
   port        = 4000
   protocol    = "HTTP"
   vpc_id      = local.vpc_id
@@ -641,6 +643,10 @@ resource "aws_lb_target_group" "backend" {
   }
 
   tags = local.common_tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_lb_listener" "http" {
@@ -816,52 +822,9 @@ resource "aws_ecs_service" "backend" {
   ]
 
   lifecycle {
-    ignore_changes = [task_definition, desired_count]
+    ignore_changes = [desired_count]
   }
 }
 
 # ── Observability: ECS service adapter ───────────────────────────────────────
 
-module "observability" {
-  source = "../../../infra/modules/adapters/platform_service"
-
-  service = {
-    name             = var.project
-    environment      = var.environment
-    region           = var.aws_region
-    kind             = "ecs_ec2_alb"
-    ecs_service_arn  = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.demo.name}/${aws_ecs_service.backend.name}"
-    alb_arn          = aws_lb.demo.arn
-    target_group_arn = aws_lb_target_group.backend.arn
-  }
-
-  logging = {
-    log_group_names = [aws_cloudwatch_log_group.backend.name]
-  }
-
-  dashboard = {
-    owner = "obs-demo"
-  }
-
-  alerts = {
-    create_sns_topic = var.create_sns_topic
-  }
-
-  canaries = {
-    enabled               = var.enable_canaries
-    frontend_url          = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}" : null
-    api_endpoint          = var.enable_canaries ? "https://${aws_cloudfront_distribution.this.domain_name}/health" : null
-    artifacts_bucket_name = var.enable_canaries ? aws_s3_bucket.canary_artifacts[0].bucket : null
-  }
-
-  tracing = {
-    enabled               = var.enable_tracing
-    service_name          = local.tracing_service_name
-    enable_canary_tracing = var.enable_tracing && var.enable_canaries
-  }
-
-  depends_on = [
-    aws_ecs_service.backend,
-    aws_cloudwatch_log_group.backend,
-  ]
-}

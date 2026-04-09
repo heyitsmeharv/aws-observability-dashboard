@@ -78,7 +78,7 @@ CloudWatch Synthetics Canaries ─────────────► CloudW
 
 ## Public vs internal surface
 
-`platform_service` is the recommended public contract. It presents the package as one module call that attaches to an existing service using AWS resource ARNs and log-group inputs:
+`platform_service` is the recommended public contract. It presents the package as one module call that attaches to an existing service using AWS resource ARNs and service-carried log-group inputs:
 
 - `service` — workload identity plus ECS/ALB attachment points
 - `logging` — log groups plus optional field mappings
@@ -88,6 +88,9 @@ CloudWatch Synthetics Canaries ─────────────► CloudW
 - `tracing` — optional OpenTelemetry/Application Signals drilldowns plus canary active tracing
 
 The `core_*` modules are internal building blocks. The lower-level `ecs_service` adapter remains available for advanced consumers, but platform teams should integrate through `platform_service` so the package can evolve without forcing them to think in CloudWatch-specific suffixes and widget wiring.
+
+Current contract note:
+The recommended public shape now carries `log_group_names` inside `service`, nests ECS attachment data under `service.ecs`, and uses the `logging` block primarily for optional field mappings.
 
 ---
 

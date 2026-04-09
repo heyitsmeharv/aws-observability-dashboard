@@ -1,19 +1,32 @@
 locals {
-  service_kind = coalesce(try(var.service.kind, null), "ecs_ec2_alb")
+  service_kind = lower(coalesce(try(var.service.kind, null), "ecs_ec2_alb"))
 
-  ecs_service_arn = try(var.service.ecs_service_arn, null)
+  ecs = try(var.service.ecs, null)
+
+  ecs_service_arn = coalesce(
+    try(local.ecs.service_arn, null),
+    try(var.service.ecs_service_arn, null)
+  )
+
+  ecs_cluster_arn = try(local.ecs.cluster_arn, null)
 
   ecs_service_arn_parts = local.ecs_service_arn != null ? split("/", local.ecs_service_arn) : []
+  ecs_cluster_arn_parts = local.ecs_cluster_arn != null ? split("/", local.ecs_cluster_arn) : []
 
   ecs_cluster_name = coalesce(
+    try(local.ecs.cluster_name, null),
     try(var.service.ecs_cluster_name, null),
+    length(local.ecs_cluster_arn_parts) >= 2 ? local.ecs_cluster_arn_parts[length(local.ecs_cluster_arn_parts) - 1] : null,
     length(local.ecs_service_arn_parts) >= 3 ? local.ecs_service_arn_parts[length(local.ecs_service_arn_parts) - 2] : null
   )
 
   ecs_service_name = coalesce(
+    try(local.ecs.service_name, null),
     try(var.service.ecs_service_name, null),
     length(local.ecs_service_arn_parts) >= 2 ? local.ecs_service_arn_parts[length(local.ecs_service_arn_parts) - 1] : null
   )
+
+  ecs_app_container_name = try(local.ecs.app_container_name, null)
 
   dashboard = {
     owner       = try(var.dashboard.owner, null)
@@ -38,10 +51,17 @@ locals {
   }
 
   tracing_enabled = coalesce(try(var.tracing.enabled, null), false)
+  tracing_mode    = lower(coalesce(try(var.tracing.mode, null), local.tracing_enabled ? "external" : "off"))
 
   tracing_service_name = coalesce(try(var.tracing.service_name, null), var.service.name)
 
   enable_canary_active_tracing = coalesce(try(var.tracing.enable_canary_tracing, null), local.tracing_enabled)
+
+  log_group_names = coalesce(
+    try(var.service.log_group_names, null),
+    try(var.logging.log_group_names, null),
+    []
+  )
 
   log_field_names = {
     level       = coalesce(try(var.logging.fields.level, null), "level")
@@ -63,8 +83,8 @@ resource "terraform_data" "validate" {
 
   lifecycle {
     precondition {
-      condition     = local.service_kind == "ecs_ec2_alb"
-      error_message = "platform_service currently supports one workload kind: ecs_ec2_alb."
+      condition     = contains(["ecs_ec2_alb", "ecs_fargate_alb"], local.service_kind)
+      error_message = "platform_service currently supports two workload kinds: ecs_ec2_alb and ecs_fargate_alb."
     }
 
     precondition {
@@ -79,17 +99,27 @@ resource "terraform_data" "validate" {
 
     precondition {
       condition     = local.ecs_service_arn == null || can(regex("^arn:[^:]+:ecs:[^:]+:[0-9]{12}:service/.+$", local.ecs_service_arn))
-      error_message = "service.ecs_service_arn must be a valid ECS service ARN."
+      error_message = "service.ecs.service_arn must be null or a valid ECS service ARN."
+    }
+
+    precondition {
+      condition     = local.ecs_cluster_arn == null || can(regex("^arn:[^:]+:ecs:[^:]+:[0-9]{12}:cluster/.+$", local.ecs_cluster_arn))
+      error_message = "service.ecs.cluster_arn must be null or a valid ECS cluster ARN."
     }
 
     precondition {
       condition     = local.ecs_cluster_name != null && length(trimspace(local.ecs_cluster_name)) > 0
-      error_message = "service.ecs_cluster_name could not be resolved. Provide service.ecs_service_arn or service.ecs_cluster_name."
+      error_message = "service ECS cluster name could not be resolved. Provide service.ecs.service_arn, service.ecs.cluster_name, service.ecs.cluster_arn, or the legacy service.ecs_cluster_name."
     }
 
     precondition {
       condition     = local.ecs_service_name != null && length(trimspace(local.ecs_service_name)) > 0
-      error_message = "service.ecs_service_name could not be resolved. Provide service.ecs_service_arn or service.ecs_service_name."
+      error_message = "service ECS service name could not be resolved. Provide service.ecs.service_arn, service.ecs.service_name, or the legacy service.ecs_service_name."
+    }
+
+    precondition {
+      condition     = length(local.log_group_names) > 0 && alltrue([for name in local.log_group_names : length(trimspace(name)) > 0])
+      error_message = "Provide at least one non-empty CloudWatch Logs group name via service.log_group_names or the legacy logging.log_group_names."
     }
 
     precondition {
@@ -121,6 +151,16 @@ resource "terraform_data" "validate" {
     }
 
     precondition {
+      condition     = contains(["off", "external", "managed"], local.tracing_mode)
+      error_message = "tracing.mode must be one of: off, external, managed."
+    }
+
+    precondition {
+      condition     = local.tracing_mode != "managed" || (local.ecs_app_container_name != null && length(trimspace(local.ecs_app_container_name)) > 0)
+      error_message = "service.ecs.app_container_name is required when tracing.mode = managed."
+    }
+
+    precondition {
       condition     = try(var.tracing.service_name, null) == null || length(trimspace(local.tracing_service_name)) > 0
       error_message = "tracing.service_name must be null or a non-empty string."
     }
@@ -139,7 +179,7 @@ module "observability" {
   alb_arn_suffix          = local.alb_arn_suffix
   target_group_arn_suffix = local.target_group_arn_suffix
 
-  log_group_names = var.logging.log_group_names
+  log_group_names = local.log_group_names
   log_field_names = local.log_field_names
 
   dashboard_owner      = local.dashboard.owner
