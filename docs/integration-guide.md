@@ -189,7 +189,7 @@ Default log field mappings:
 | `service_name`          | `service.name` | Trace service name used for filtering and labels |
 | `enable_canary_tracing` | `enabled`      | Enables active tracing for CloudWatch Synthetics canaries |
 
-The reusable module publishes tracing links and optional canary tracing. `mode = "managed"` is the public contract flag to use when the surrounding stack owns workload instrumentation, as the sandbox demo does. For arbitrary existing services, the monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` now follows AWS’s documented Node CommonJS pattern for ECS: a CloudWatch agent sidecar plus an `init` container that injects the ADOT Node auto-instrumentation into the backend task.
+The reusable module publishes tracing links and optional canary tracing. `mode = "managed"` is the public contract flag to use when the surrounding stack owns workload instrumentation, as the sandbox demo does. For arbitrary existing services, the monitored workload must still be instrumented separately with OpenTelemetry/Application Signals. The demo stack in `examples/react-node-demo` uses CommonJS ADOT auto-instrumentation in the backend container plus a CloudWatch agent sidecar.
 
 ---
 

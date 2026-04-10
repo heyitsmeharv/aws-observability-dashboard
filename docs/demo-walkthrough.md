@@ -156,7 +156,7 @@ for i in $(seq 1 15); do curl -s "http://${ALB_DNS}/api/fail" > /dev/null; done
 for i in $(seq 1 10); do curl -s "http://${ALB_DNS}/api/dependency" > /dev/null; done
 ```
 
-If `enable_tracing` is on, the dependency traffic above also generates Application Signals traces for the backend service. The demo backend follows AWS’s documented CommonJS path for Node: an `init` container copies the ADOT auto-instrumentation into a shared task volume, and the backend starts with `NODE_OPTIONS=--require /otel-auto-instrumentation-node/autoinstrumentation.js`.
+If `enable_tracing` is on, the dependency traffic above also generates Application Signals traces for the backend service. The demo backend uses CommonJS ADOT auto-instrumentation inside the application container and sends telemetry to the CloudWatch agent sidecar running in the same ECS task.
 
 ---
 
