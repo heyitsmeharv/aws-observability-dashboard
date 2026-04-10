@@ -53,6 +53,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Print checkout SHA
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "github.sha=${{ github.sha }}"
+          git rev-parse HEAD
+          git status --short
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -99,6 +110,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Print checkout SHA
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "github.sha=${{ github.sha }}"
+          git rev-parse HEAD
+          git status --short
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -149,6 +171,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Print checkout SHA
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "github.sha=${{ github.sha }}"
+          git rev-parse HEAD
+          git status --short
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -190,8 +223,6 @@ jobs:
           tags: |
             ${{ steps.ecr.outputs.backend_repo }}:latest
             ${{ steps.ecr.outputs.backend_repo }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build frontend
         working-directory: examples/react-node-demo/app/frontend
