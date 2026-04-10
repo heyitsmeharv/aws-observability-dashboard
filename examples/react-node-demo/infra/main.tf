@@ -46,10 +46,7 @@ locals {
     "aws.log.group.names=${aws_cloudwatch_log_group.backend.name}",
   ]))
 
-  backend_container_environment = concat([
-    { name = "NODE_ENV", value = var.environment },
-    { name = "PORT", value = "4000" },
-    ], var.enable_tracing ? [
+  backend_tracing_environment = jsondecode(var.enable_tracing ? jsonencode([
     { name = "OTEL_RESOURCE_ATTRIBUTES", value = local.otel_resource_attributes },
     { name = "OTEL_LOGS_EXPORTER", value = "none" },
     { name = "OTEL_METRICS_EXPORTER", value = "none" },
@@ -61,47 +58,33 @@ locals {
     { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://localhost:2000" },
     { name = "OTEL_PROPAGATORS", value = "tracecontext,baggage,b3,xray" },
     { name = "NODE_OPTIONS", value = "--require /otel-auto-instrumentation-node/autoinstrumentation.js" },
-  ] : [])
+  ]) : "[]")
 
-  backend_container_definitions = concat([
-    merge({
-      name      = "backend"
-      image     = "${aws_ecr_repository.backend.repository_url}:${var.backend_image_tag}"
-      essential = true
-      cpu       = 256
-      memory    = 512
-      portMappings = [
-        { containerPort = 4000, hostPort = 4000, protocol = "tcp" }
-      ]
-      environment = local.backend_container_environment
-      mountPoints = var.enable_tracing ? [
-        {
-          sourceVolume  = "opentelemetry-auto-instrumentation-node"
-          containerPath = "/otel-auto-instrumentation-node"
-          readOnly      = false
-        }
-      ] : []
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "backend"
-        }
-      }
-      }, var.enable_tracing ? {
-      dependsOn = [
-        {
-          containerName = "init"
-          condition     = "SUCCESS"
-        },
-        {
-          containerName = "ecs-cwagent"
-          condition     = "START"
-        }
-      ]
-    } : {})
-    ], var.enable_tracing ? [
+  backend_container_environment = concat([
+    { name = "NODE_ENV", value = var.environment },
+    { name = "PORT", value = "4000" },
+  ], local.backend_tracing_environment)
+
+  backend_mount_points = jsondecode(var.enable_tracing ? jsonencode([
+    {
+      sourceVolume  = "opentelemetry-auto-instrumentation-node"
+      containerPath = "/otel-auto-instrumentation-node"
+      readOnly      = false
+    }
+  ]) : "[]")
+
+  backend_depends_on = jsondecode(var.enable_tracing ? jsonencode([
+    {
+      containerName = "init"
+      condition     = "SUCCESS"
+    },
+    {
+      containerName = "ecs-cwagent"
+      condition     = "START"
+    }
+  ]) : "null")
+
+  tracing_container_definitions = jsondecode(var.enable_tracing ? jsonencode([
     {
       name      = "init"
       image     = local.adot_node_instrumentation_image
@@ -153,7 +136,32 @@ locals {
         }
       }
     }
-  ] : [])
+  ]) : "[]")
+
+  backend_container_definitions = concat([
+    merge({
+      name      = "backend"
+      image     = "${aws_ecr_repository.backend.repository_url}:${var.backend_image_tag}"
+      essential = true
+      cpu       = 256
+      memory    = 512
+      portMappings = [
+        { containerPort = 4000, hostPort = 4000, protocol = "tcp" }
+      ]
+      environment = local.backend_container_environment
+      mountPoints = local.backend_mount_points
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "backend"
+        }
+      }
+      }, local.backend_depends_on != null ? {
+      dependsOn = local.backend_depends_on
+    } : {})
+  ], local.tracing_container_definitions)
 }
 
 data "aws_caller_identity" "current" {}
