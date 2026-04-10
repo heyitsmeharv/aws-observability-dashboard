@@ -10,8 +10,7 @@ terraform {
 }
 
 locals {
-  name_prefix                     = "${var.project}-${var.environment}"
-  adot_node_instrumentation_image = "public.ecr.aws/aws-observability/adot-autoinstrumentation-node:0.8.0"
+  name_prefix = "${var.project}-${var.environment}"
 
   # Resolve VPC and subnets: use provided values or fall back to defaults
   vpc_id     = var.vpc_id != null ? var.vpc_id : data.aws_vpc.default[0].id
@@ -57,7 +56,7 @@ locals {
     { name = "OTEL_TRACES_SAMPLER", value = "xray" },
     { name = "OTEL_TRACES_SAMPLER_ARG", value = "endpoint=http://localhost:2000" },
     { name = "OTEL_PROPAGATORS", value = "tracecontext,baggage,b3,xray" },
-    { name = "NODE_OPTIONS", value = "--require /otel-auto-instrumentation-node/autoinstrumentation.js" },
+    { name = "NODE_OPTIONS", value = "--require @aws/aws-distro-opentelemetry-node-autoinstrumentation/register" },
   ]) : "[]")
 
   backend_container_environment = concat([
@@ -65,19 +64,7 @@ locals {
     { name = "PORT", value = "4000" },
   ], local.backend_tracing_environment)
 
-  backend_mount_points = jsondecode(var.enable_tracing ? jsonencode([
-    {
-      sourceVolume  = "opentelemetry-auto-instrumentation-node"
-      containerPath = "/otel-auto-instrumentation-node"
-      readOnly      = false
-    }
-  ]) : "[]")
-
   backend_depends_on = jsondecode(var.enable_tracing ? jsonencode([
-    {
-      containerName = "init"
-      condition     = "SUCCESS"
-    },
     {
       containerName = "ecs-cwagent"
       condition     = "START"
@@ -85,32 +72,6 @@ locals {
   ]) : "null")
 
   tracing_container_definitions = jsondecode(var.enable_tracing ? jsonencode([
-    {
-      name      = "init"
-      image     = local.adot_node_instrumentation_image
-      essential = false
-      command = [
-        "cp",
-        "-a",
-        "/autoinstrumentation/.",
-        "/otel-auto-instrumentation-node"
-      ]
-      mountPoints = [
-        {
-          sourceVolume  = "opentelemetry-auto-instrumentation-node"
-          containerPath = "/otel-auto-instrumentation-node"
-          readOnly      = false
-        }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.cwagent[0].name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "cwagent-init"
-        }
-      }
-    },
     {
       name      = "ecs-cwagent"
       image     = "public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest"
@@ -149,7 +110,6 @@ locals {
         { containerPort = 4000, hostPort = 4000, protocol = "tcp" }
       ]
       environment = local.backend_container_environment
-      mountPoints = local.backend_mount_points
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -822,13 +782,6 @@ resource "aws_ecs_task_definition" "backend" {
   cpu                      = var.enable_tracing ? 384 : 256
   memory                   = var.enable_tracing ? 768 : 512
   tags                     = local.common_tags
-  dynamic "volume" {
-    for_each = var.enable_tracing ? [1] : []
-
-    content {
-      name = "opentelemetry-auto-instrumentation-node"
-    }
-  }
 
   container_definitions = jsonencode(local.backend_container_definitions)
 }
